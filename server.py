@@ -260,13 +260,13 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
                 '/api/users/reset-password': self.reset_user_password,
                 '/api/users/permissions': self.save_user_permissions,
                 '/api/settings/save': self.save_settings,
-                '/api/settings/reset': self.reset_system,
                 '/api/backup/restore': self.restore_backup,
                 '/api/backup/delete': self.delete_backup,
                 '/api/inventory/import-process': self.import_process_batch,
                 '/api/inventory/barcode-update': self.barcode_update,
                 '/api/shifts/save': self.save_shifts,
                 '/api/shifts/delete': self.delete_shift,
+                '/api/export': self.export_data,
             }
             handler = body_routes.get(path)
             if handler:
@@ -1681,34 +1681,6 @@ table{{width:100%;border-collapse:collapse}}
             os.remove(backup_path)
         self.send_json_response({"success": True})
 
-    # ==================== SYSTEM RESET ====================
-    def reset_system(self, data):
-        password = data.get('password', '')
-        if not password:
-            self.send_json_response({"error": "كلمة المرور مطلوبة"}, 400)
-            return
-        admin = db.query_db("SELECT * FROM system_users WHERE username='admin' AND is_active=1", one=True)
-        if not admin or not self._verify_password(password, admin['password_hash']):
-            self.send_json_response({"error": "كلمة مرور المدير غير صحيحة"}, 401)
-            return
-        conn = db.get_conn()
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM attendance")
-            cursor.execute("DELETE FROM cashbox")
-            cursor.execute("DELETE FROM transactions")
-            cursor.execute("DELETE FROM employee_ledger")
-            cursor.execute("DELETE FROM payroll")
-            cursor.execute("DELETE FROM factory_expenses")
-            cursor.execute("UPDATE inventory SET quantity=0")
-            conn.commit()
-            self.send_json_response({"success": True})
-        except Exception as e:
-            conn.rollback()
-            server_log(f"reset_system failed, rolled back: {e}")
-            self.send_json_response({"error": f"فشل إعادة تعيين النظام: {str(e)}"}, 500)
-
     # ==================== INVENTORY XLSX EXPORT ====================
     def export_inventory_xlsx(self):
         try:
@@ -1865,6 +1837,115 @@ table{{width:100%;border-collapse:collapse}}
                 self.send_json_response({"error": f"تم الحفظ لكن فشلت الاستعادة: {str(e)}"}, 500)
         else:
             self.send_json_response({"success": True, "filename": safe_name, "restored": False})
+
+
+    # ==================== GENERIC DATA EXPORT ====================
+    def export_data(self, data):
+        fmt = data.get('format', 'csv')
+        columns = data.get('columns', [])
+        rows = data.get('rows', [])
+        title = data.get('title', 'تصدير')
+        filename = data.get('filename', 'export')
+
+        if not columns or not rows:
+            self.send_json_response({"error": "لا توجد بيانات للتصدير"}, 400)
+            return
+
+        try:
+            if fmt == 'csv':
+                self._export_csv(columns, rows, filename)
+            elif fmt == 'xlsx':
+                self._export_xlsx(columns, rows, title, filename)
+            elif fmt == 'pdf':
+                self._export_pdf(columns, rows, title, filename)
+            else:
+                self.send_json_response({"error": f"صيغة غير مدعومة: {fmt}"}, 400)
+        except Exception as e:
+            server_log(f"Export failed: {e}")
+            self.send_json_response({"error": f"فشل التصدير: {str(e)}"}, 500)
+
+    def _export_csv(self, columns, rows, filename):
+        import csv, io
+        output = io.StringIO()
+        output.write('\ufeff')
+        writer = csv.writer(output)
+        writer.writerow([c['label'] for c in columns])
+        for row in rows:
+            writer.writerow([row.get(c['key'], '') for c in columns])
+        content = output.getvalue().encode('utf-8-sig')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/csv; charset=utf-8-sig')
+        self.send_header('Content-Disposition', f'attachment; filename="{filename}.csv"')
+        self.send_header('Content-Length', str(len(content)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(content)
+
+    def _export_xlsx(self, columns, rows, title, filename):
+        import openpyxl
+        import openpyxl.styles
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = title[:31]
+        ws.sheet_view.rightToLeft = True
+        header_font = openpyxl.styles.Font(bold=True, size=11)
+        for col_idx, col in enumerate(columns, 1):
+            cell = ws.cell(row=1, column=col_idx, value=col['label'])
+            cell.font = header_font
+            cell.alignment = openpyxl.styles.Alignment(horizontal='center')
+        for r_idx, row in enumerate(rows, 2):
+            for c_idx, col in enumerate(columns, 1):
+                ws.cell(row=r_idx, column=c_idx, value=row.get(col['key'], ''))
+        for ci in range(1, len(columns) + 1):
+            ws.column_dimensions[chr(64 + ci) if ci <= 26 else 'A'].width = 18
+        import io
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        xlsx_bytes = buf.read()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.send_header('Content-Disposition', f'attachment; filename="{filename}.xlsx"')
+        self.send_header('Content-Length', str(len(xlsx_bytes)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(xlsx_bytes)
+
+    def _export_pdf(self, columns, rows, title, filename):
+        html = self._render_export_html(columns, rows, title)
+        content = html.encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Disposition', f'inline; filename="{filename}.html"')
+        self.send_header('Content-Length', str(len(content)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(content)
+
+    def _render_export_html(self, columns, rows, title):
+        thead = '<tr>' + ''.join(f'<th>{c["label"]}</th>' for c in columns) + '</tr>'
+        trows = []
+        for row in rows:
+            cells = ''.join(f'<td>{str(row.get(c["key"], "") or "")}</td>' for c in columns)
+            trows.append(f'<tr>{cells}</tr>')
+        tbody = '\n'.join(trows)
+        return f'''<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
+<style>
+  @media print {{ body {{ padding:0;margin:0; }} }}
+  body {{ font-family:"Tajawal","Segoe UI",sans-serif; padding:20px; }}
+  h1 {{ font-size:1.2rem; text-align:center; margin-bottom:16px; color:#1e293b; }}
+  table {{ width:100%; border-collapse:collapse; font-size:0.8rem; }}
+  th,td {{ border:1px solid #ddd; padding:6px 8px; text-align:center; }}
+  th {{ background:#0d9488; color:#fff; }}
+  tr:nth-child(even) {{ background:#f8fafc; }}
+  .print-btn {{ display:block; margin:16px auto; padding:8px 24px; background:#0d9488; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:1rem; }}
+  @media print {{ .print-btn {{ display:none; }} }}
+</style></head><body>
+<h1>{title}</h1>
+<button class="print-btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>
+<script>window.onload=function(){{setTimeout(function(){{window.print()}},500)}}</script>
+</body></html>'''
 
 
 def run_server():

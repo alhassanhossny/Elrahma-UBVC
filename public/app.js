@@ -20,7 +20,9 @@ var app = {
         inventory: { title: 'مخزن BVC Stock', subtitle: 'إدارة البضائع والقطع المتوفرة ومراقبة النواقص' },
         treasury: { title: 'الخزنة', subtitle: 'إدارة المعاملات المالية الواردة والمصروفات' },
         permissions: { title: 'صلاحيات المستخدمين', subtitle: 'التحكم في صلاحيات الوصول للصفحات' },
-        settings: { title: 'الإعدادات', subtitle: 'إدارة المستخدمين والورديات والنسخ الاحتياطي' }
+        users: { title: 'إدارة المستخدمين', subtitle: 'إضافة وتعديل وحذف مستخدمي النظام' },
+        shifts: { title: 'إعدادات الورديات', subtitle: 'تحديد أوقات وساعات العمل للورديات' },
+        settings: { title: 'الإعدادات', subtitle: 'النسخ الاحتياطي واستعادة النظام' }
     },
 
     init: function() {
@@ -36,7 +38,6 @@ var app = {
         this.bindEvents();
         this.setTodayDates();
         this.loadShifts();
-        this.initDarkMode();
 
         if (this.loggedInUser) {
             this.hideLoginForm();
@@ -110,6 +111,8 @@ var app = {
         payroll: true,
         inventory: true,
         treasury: true,
+        users: true,
+        shifts: true,
         settings: true
     },
 
@@ -348,37 +351,7 @@ var app = {
             }
         });
 
-        // 8. Global Search
-        var searchTimer = null;
-        document.getElementById('global-search').addEventListener('input', function() {
-            var val = this.value.trim();
-            var resultsEl = document.getElementById('global-search-results');
-            if (val.length < 2) {
-                resultsEl.classList.remove('open');
-                resultsEl.innerHTML = '';
-                return;
-            }
-            if (searchTimer) clearTimeout(searchTimer);
-            searchTimer = setTimeout(function() {
-                self.globalSearch(val);
-            }, 300);
-        });
-        document.getElementById('global-search').addEventListener('blur', function() {
-            setTimeout(function() {
-                document.getElementById('global-search-results').classList.remove('open');
-            }, 250);
-        });
-        document.getElementById('global-search').addEventListener('focus', function() {
-            var resultsEl = document.getElementById('global-search-results');
-            if (resultsEl.children.length > 0) resultsEl.classList.add('open');
-        });
-
-        // 9. Dark Mode Toggle
-        document.getElementById('btn-dark-mode').addEventListener('click', function() {
-            self.toggleDarkMode();
-        });
-
-        // 10. Attendance Print
+        // 8. Attendance Print
         var printAttBtn = document.getElementById('btn-print-attendance');
         if (printAttBtn) {
             printAttBtn.addEventListener('click', function() {
@@ -394,14 +367,8 @@ var app = {
             });
         }
 
-        // 12. Keyboard Shortcuts
+        // 11. Keyboard Shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl+F -> focus global search
-            if (e.ctrlKey && e.key === 'f') {
-                e.preventDefault();
-                document.getElementById('global-search').focus();
-                return;
-            }
             // Ctrl+Q -> open quick attendance
             if (e.ctrlKey && e.key === 'q') {
                 e.preventDefault();
@@ -414,12 +381,6 @@ var app = {
                 if (self.loggedInUser && self.activeTab === 'employees') {
                     self.openEmployeeModal();
                 }
-                return;
-            }
-            // Ctrl+D -> toggle dark mode
-            if (e.ctrlKey && e.key === 'd') {
-                e.preventDefault();
-                self.toggleDarkMode();
                 return;
             }
             // ? -> toggle keyboard shortcut help
@@ -437,6 +398,9 @@ var app = {
                 }
             }
         });
+
+        // Add toggleKbdHint method for the info button
+        // (defined later in the object)
 
         // 8. Settings tab events
         document.getElementById('btn-add-user').addEventListener('click', function() {
@@ -464,13 +428,6 @@ var app = {
         });
         document.getElementById('btn-upload-backup').addEventListener('click', function() {
             self.uploadBackup();
-        });
-        document.getElementById('btn-reset-system').addEventListener('click', function() {
-            self.openModal('reset-system');
-        });
-        document.getElementById('form-reset-system').addEventListener('submit', function(e) {
-            e.preventDefault();
-            self.handleResetSystem();
         });
         document.getElementById('btn-export-stock-xlsx').addEventListener('click', function() {
             self.exportStockXLSX();
@@ -548,8 +505,14 @@ var app = {
             case 'treasury':
                 this.loadTreasury();
                 break;
+            case 'users':
+                this.loadUsersTab();
+                break;
+            case 'shifts':
+                this.loadShiftsTab();
+                break;
             case 'settings':
-                this.loadSettingsTab();
+                this.loadBackupsTab();
                 break;
             case 'permissions':
                 this.loadPermissionsTab();
@@ -692,7 +655,9 @@ var app = {
                                    '<button class="action-btn" title="حذف موظف" onclick="app.deleteEmployee(' + emp.id + ')">🗑️</button>';
                 }
 
-                tr.innerHTML = '<td>' + (emp.employee_code || '-') + '</td>' +
+                var rowData = JSON.stringify({employee_code:emp.employee_code||'',name:emp.name,national_id:emp.national_id||'',phone:emp.phone||'',pay_type:payTypeText,rate:text,status:statusText});
+                tr.innerHTML = '<td><input type="checkbox" class="row-select" data-row=\'' + rowData.replace(/'/g,'&#39;') + '\'></td>' +
+                               '<td>' + (emp.employee_code || '-') + '</td>' +
                                '<td><strong>' + emp.name + '</strong></td>' +
                                '<td>' + (emp.national_id || '-') + '</td>' +
                                '<td>' + (emp.phone || '-') + '</td>' +
@@ -706,6 +671,7 @@ var app = {
                                '</td>';
                 tbody.appendChild(tr);
             });
+            self.bindExportToolbar('employees-table');
         });
     },
 
@@ -841,7 +807,10 @@ var app = {
                 var lateText = row.is_late ? '<span class="text-danger">اخر ' + row.late_minutes + ' د</span>' : '-';
                 var excuseText = row.excuse ? '<small>' + row.excuse + '</small>' : '';
 
-                tr.innerHTML = '<td>' + row.date + '</td>' +
+                var isLateText = row.is_late ? 'تأخير ' + row.late_minutes + 'د' : '-';
+                var rowData = JSON.stringify({date:row.date,employee_name:row.employee_name,pay_type:payTypeText,shift:shiftText,check_in:row.check_in||'',check_out:row.check_out||'',hours_worked:row.hours_worked,overtime_hours:row.overtime_hours,is_late:isLateText});
+                tr.innerHTML = '<td><input type="checkbox" class="row-select" data-row=\'' + rowData.replace(/'/g,'&#39;') + '\'></td>' +
+                               '<td>' + row.date + '</td>' +
                                '<td><strong>' + row.employee_name + '</strong></td>' +
                                '<td>' + payTypeText + '</td>' +
                                '<td><span class="badge badge-secondary">' + shiftText + '</span></td>' +
@@ -856,6 +825,7 @@ var app = {
                                '<td class="no-print"><button class="btn-print" title="طباعة الإذن" onclick="window.open(\'' + API_BASE + '/receipt/attendance?id=' + row.id + '\', \'_blank\', \'width=500,height=600\')">🖨️</button></td>';
                 tbody.appendChild(tr);
             });
+            self.bindExportToolbar('attendance-table');
         });
     },
 
@@ -1078,7 +1048,9 @@ var app = {
                     ? '<span class="badge badge-success">تمت التسوية (كشف #' + row.payroll_id + ')</span>' 
                     : '<span class="badge badge-warning">معلق / قيد الحساب</span>';
 
-                tr.innerHTML = '<td>' + row.date + '</td>' +
+                var rowData = JSON.stringify({date:row.date,employee_name:row.employee_name,type:typeText,amount:row.amount,description:row.description||'',payroll_id:row.payroll_id?'تمت التسوية':'معلق'});
+                tr.innerHTML = '<td><input type="checkbox" class="row-select" data-row=\'' + rowData.replace(/'/g,'&#39;') + '\'></td>' +
+                               '<td>' + row.date + '</td>' +
                                '<td><strong>' + row.employee_name + '</strong></td>' +
                                '<td><span class="' + typeClass + '">' + typeText + '</span></td>' +
                                '<td><strong>' + row.amount + ' ج.م</strong></td>' +
@@ -1089,6 +1061,7 @@ var app = {
                                '</td>';
                 tbody.appendChild(tr);
             });
+            self.bindExportToolbar('transactions-table');
         });
     },
 
@@ -1178,8 +1151,15 @@ var app = {
                     ? rec.total_hours + ' ساعة' 
                     : rec.total_shifts + ' وردية' + (rec.overtime_hours > 0 ? ' (+' + rec.overtime_hours + ' س.إضافي)' : '');
                 
-                tr.innerHTML = '<td><strong>' + rec.name + '</strong></td>' +
-                               '<td>' + (rec.pay_type === 'hourly' ? 'بالساعة' : 'بالوردية') + '</td>' +
+                var finalNet = rec.base_salary + rec.total_bonuses - rec.total_deductions - rec.suggested_loan_deduction;
+                self.currentPayrollData.records[idx].loan_deduction = rec.suggested_loan_deduction;
+                self.currentPayrollData.records[idx].final_net_salary = finalNet;
+
+                var payTypeLabel = rec.pay_type === 'hourly' ? 'بالساعة' : 'بالوردية';
+                var rowData = JSON.stringify({name:rec.name,pay_type:payTypeLabel,rate:rateText,base_salary:rec.base_salary,overtime_pay:rec.overtime_pay,total_bonuses:rec.total_bonuses,total_deductions:rec.total_deductions,outstanding_loan_balance:rec.outstanding_loan_balance,net_salary:finalNet});
+                tr.innerHTML = '<td><input type="checkbox" class="row-select" data-row=\'' + rowData.replace(/'/g,'&#39;') + '\'></td>' +
+                               '<td><strong>' + rec.name + '</strong></td>' +
+                               '<td>' + payTypeLabel + '</td>' +
                                '<td>' + rateText + '</td>' +
                                '<td>' + workText + '</td>' +
                                '<td>' + rec.base_salary + ' ج.م</td>' +
@@ -1197,15 +1177,12 @@ var app = {
                                'step="5" ' +
                                'oninput="app.updateNetSalaryDisplay(' + idx + ', this.value)">' +
                                '</td>' +
-                               '<td><strong class="text-primary" id="net-val-' + idx + '">' + (rec.net_salary - rec.suggested_loan_deduction) + ' ج.م</strong></td>';
-                
-                // Set the default calculated net salary to the record memory
-                self.currentPayrollData.records[idx].loan_deduction = rec.suggested_loan_deduction;
-                self.currentPayrollData.records[idx].final_net_salary = rec.base_salary + rec.total_bonuses - rec.total_deductions - rec.suggested_loan_deduction;
+                               '<td><strong class="text-primary" id="net-val-' + idx + '">' + finalNet + ' ج.م</strong></td>';
                 
                 tbody.appendChild(tr);
             });
 
+            self.bindExportToolbar('payroll-table');
             document.getElementById('payroll-preview-card').style.display = 'block';
             document.getElementById('payroll-export-actions').style.display = 'flex';
             self.showToast('تم احتساب كشف الأجور بنجاح، يمكنك تعديل مستقطع السلفة يدوياً لكل عامل');
@@ -1331,7 +1308,9 @@ var app = {
                 : '';
             var barcodeHtml = row.barcode ? '<code style="direction:ltr;display:inline-block">' + row.barcode + '</code>' : '-';
 
-            tr.innerHTML = '<td><code>' + row.item_code + '</code></td>' +
+            var rowData = JSON.stringify({item_code:row.item_code,item_name:row.item_name,quantity:row.quantity,unit:row.unit,barcode:row.barcode||'',wholesale_price:row.wholesale_price||0,avg_purchase_price:row.avg_purchase_price||0,min_stock:row.min_stock});
+            tr.innerHTML = '<td><input type="checkbox" class="row-select" data-row=\'' + rowData.replace(/'/g,'&#39;') + '\'></td>' +
+                           '<td><code>' + row.item_code + '</code></td>' +
                            '<td><strong>' + row.item_name + '</strong></td>' +
                            '<td class="' + (isLow ? 'text-danger' : '') + '"><strong>' + row.quantity + '</strong></td>' +
                            '<td>' + row.unit + '</td>' +
@@ -1349,6 +1328,7 @@ var app = {
                            '</td>';
             tbody.appendChild(tr);
         });
+        self.bindExportToolbar('inventory-table');
     },
 
     openInventoryModal: function() {
@@ -1463,7 +1443,9 @@ var app = {
                 var amountClass = row.type === 'deposit' ? 'text-success' : 'text-danger';
                 var sign = row.type === 'deposit' ? '+' : '-';
                 
-                tr.innerHTML = '<td>' + row.date + '</td>' +
+                var rowData = JSON.stringify({date:row.date,type:typeText,amount:row.amount,description:row.description||row.source||'',category:row.category||'',balance_after:row.balance_after||0});
+                tr.innerHTML = '<td><input type="checkbox" class="row-select" data-row=\'' + rowData.replace(/'/g,'&#39;') + '\'></td>' +
+                               '<td>' + row.date + '</td>' +
                                '<td><span class="' + typeClass + '"><strong>' + typeText + '</strong></span></td>' +
                                '<td><strong class="' + amountClass + '">' + sign + row.amount + ' ج.م</strong></td>' +
                                '<td><small>' + (row.description || row.source || '-') + '</small></td>' +
@@ -1471,6 +1453,7 @@ var app = {
                                '<td>' + (row.balance_after || 0) + ' ج.م</td>';
                 tbody.appendChild(tr);
             });
+            self.bindExportToolbar('treasury-table');
         });
     },
 
@@ -1599,103 +1582,11 @@ var app = {
         return this.padZero(h12) + ':' + m + ' ' + ampm;
     },
 
-    // Global Search
-    globalSearch: function(query) {
-        var self = this;
-        var resultsEl = document.getElementById('global-search-results');
-        this.apiCall(API_BASE + '/search?q=' + encodeURIComponent(query), 'GET', null, function(err, data) {
-            if (err) return;
-            var html = '';
-            var total = (data.employees ? data.employees.length : 0) + (data.inventory ? data.inventory.length : 0) + (data.transactions ? data.transactions.length : 0) + (data.attendance ? data.attendance.length : 0);
-            if (total === 0) {
-                html = '<div class="search-no-results">لا توجد نتائج</div>';
-            } else {
-                if (data.employees && data.employees.length > 0) {
-                    html += '<div class="search-result-section">👥 الموظفون (' + data.employees.length + ')</div>';
-                    for (var i = 0; i < data.employees.length; i++) {
-                        var emp = data.employees[i];
-                        html += '<div class="search-result-item" data-type="employee" data-id="' + emp.id + '">' +
-                            '<span class="search-result-label">' + emp.name + '</span>' +
-                            '<span class="search-result-sub">' + (emp.employee_code || '') + '</span></div>';
-                    }
-                }
-                if (data.inventory && data.inventory.length > 0) {
-                    html += '<div class="search-result-section">📦 المخزون (' + data.inventory.length + ')</div>';
-                    for (var i = 0; i < data.inventory.length; i++) {
-                        var inv = data.inventory[i];
-                        html += '<div class="search-result-item" data-type="inventory" data-id="' + inv.id + '">' +
-                            '<span class="search-result-label">' + inv.item_name + '</span>' +
-                            '<span class="search-result-sub">كود: ' + inv.item_code + ' | مخزون: ' + inv.quantity + '</span></div>';
-                    }
-                }
-                if (data.transactions && data.transactions.length > 0) {
-                    html += '<div class="search-result-section">💰 الحركات المالية (' + data.transactions.length + ')</div>';
-                    for (var i = 0; i < data.transactions.length; i++) {
-                        var tx = data.transactions[i];
-                        html += '<div class="search-result-item" data-type="transaction" data-id="' + tx.id + '">' +
-                            '<span class="search-result-label">' + tx.employee_name + ' - ' + tx.description + '</span>' +
-                            '<span class="search-result-sub">' + tx.amount + ' ج.م (' + tx.date + ')</span></div>';
-                    }
-                }
-                if (data.attendance && data.attendance.length > 0) {
-                    html += '<div class="search-result-section">📅 الحضور (' + data.attendance.length + ')</div>';
-                    for (var i = 0; i < data.attendance.length; i++) {
-                        var att = data.attendance[i];
-                        html += '<div class="search-result-item" data-type="attendance" data-id="' + att.id + '">' +
-                            '<span class="search-result-label">' + att.employee_name + ' - ' + att.date + '</span>' +
-                            '<span class="search-result-sub">' + att.check_in + ' → ' + att.check_out + '</span></div>';
-                    }
-                }
-            }
-            resultsEl.innerHTML = html;
-            resultsEl.classList.add('open');
-            // Click handlers on result items
-            var items = resultsEl.querySelectorAll('.search-result-item');
-            for (var j = 0; j < items.length; j++) {
-                items[j].addEventListener('mousedown', function(e) {
-                    e.preventDefault();
-                    var type = this.getAttribute('data-type');
-                    var id = this.getAttribute('data-id');
-                    resultsEl.classList.remove('open');
-                    document.getElementById('global-search').value = '';
-                    if (type === 'employee') {
-                        self.switchTab('employees');
-                        self.editEmployee(parseInt(id));
-                    } else if (type === 'inventory') {
-                        self.switchTab('inventory');
-                        self.editInventoryItem(parseInt(id));
-                    } else if (type === 'transaction' || type === 'attendance') {
-                        self.switchTab('finance');
-                    }
-                });
-            }
-        });
-    },
-
-    // Dark Mode
-    toggleDarkMode: function() {
-        var body = document.body;
-        var btn = document.getElementById('btn-dark-mode');
-        if (body.getAttribute('data-theme') === 'dark') {
-            body.removeAttribute('data-theme');
-            btn.innerHTML = '🌙 الوضع الليلي';
-            localStorage.setItem('bvc_theme', 'light');
-        } else {
-            body.setAttribute('data-theme', 'dark');
-            btn.innerHTML = '☀️ الوضع النهاري';
-            localStorage.setItem('bvc_theme', 'dark');
-        }
-    },
-
-    initDarkMode: function() {
-        var theme = localStorage.getItem('bvc_theme');
-        var btn = document.getElementById('btn-dark-mode');
-        if (theme === 'dark') {
-            document.body.setAttribute('data-theme', 'dark');
-            if (btn) btn.innerHTML = '☀️ الوضع النهاري';
-        } else {
-            document.body.removeAttribute('data-theme');
-            if (btn) btn.innerHTML = '🌙 الوضع الليلي';
+    // Toggle keyboard shortcut hint popup
+    toggleKbdHint: function() {
+        var hint = document.getElementById('kbd-hint');
+        if (hint) {
+            hint.style.display = hint.style.display === 'none' ? 'block' : 'none';
         }
     },
 
@@ -1721,6 +1612,190 @@ var app = {
         }
     },
 
+    // ==================== TABLE EXPORT ====================
+
+    _exportConfigs: {
+        'employees-table': {
+            columns: [
+                {key:'employee_code',label:'الكود'},{key:'name',label:'الاسم'},{key:'national_id',label:'رقم الهوية'},
+                {key:'phone',label:'الهاتف'},{key:'pay_type',label:'نظام الحساب'},{key:'rate',label:'المعدل'},
+                {key:'status',label:'الحالة'}
+            ],
+            title: 'قائمة الموظفين',
+            filename: 'Employees'
+        },
+        'attendance-table': {
+            columns: [
+                {key:'date',label:'التاريخ'},{key:'employee_name',label:'الموظف'},{key:'pay_type',label:'النظام'},
+                {key:'shift',label:'الوردية'},{key:'check_in',label:'الحضور'},{key:'check_out',label:'الانصراف'},
+                {key:'hours_worked',label:'الساعات'},{key:'overtime_hours',label:'إضافي'},{key:'is_late',label:'تأخير'}
+            ],
+            title: 'سجل الحضور والانصراف',
+            filename: 'Attendance'
+        },
+        'transactions-table': {
+            columns: [
+                {key:'date',label:'التاريخ'},{key:'employee_name',label:'الموظف'},{key:'type',label:'النوع'},
+                {key:'amount',label:'المبلغ'},{key:'description',label:'البيان'},{key:'payroll_id',label:'حالة التسوية'}
+            ],
+            title: 'السلف والعمليات المالية',
+            filename: 'Transactions'
+        },
+        'payroll-table': {
+            columns: [
+                {key:'name',label:'الاسم'},{key:'pay_type',label:'النظام'},{key:'rate',label:'المعدل'},
+                {key:'base_salary',label:'الأساسي'},{key:'overtime_pay',label:'إضافي'},{key:'total_bonuses',label:'مكافآت'},
+                {key:'total_deductions',label:'خصومات'},{key:'outstanding_loan_balance',label:'القرض'},
+                {key:'net_salary',label:'الصافي'}
+            ],
+            title: 'كشف الرواتب',
+            filename: 'Payroll'
+        },
+        'inventory-table': {
+            columns: [
+                {key:'item_code',label:'الكود'},{key:'item_name',label:'الاسم'},{key:'quantity',label:'الكمية'},
+                {key:'unit',label:'الوحدة'},{key:'barcode',label:'الباركود'},{key:'wholesale_price',label:'القطاعي'},
+                {key:'avg_purchase_price',label:'متوسط الشراء'},{key:'min_stock',label:'حد الطلب'}
+            ],
+            title: 'مخزون BVC',
+            filename: 'Inventory'
+        },
+        'treasury-table': {
+            columns: [
+                {key:'date',label:'التاريخ'},{key:'type',label:'النوع'},{key:'amount',label:'المبلغ'},
+                {key:'description',label:'الوصف'},{key:'category',label:'التصنيف'},{key:'balance_after',label:'الرصيد بعد'}
+            ],
+            title: 'حركات الخزنة',
+            filename: 'Treasury'
+        }
+    },
+
+    toggleSelectAll: function(checkbox, tableId) {
+        var table = document.getElementById(tableId);
+        if (!table) return;
+        var checkboxes = table.querySelectorAll('.row-select');
+        for (var i = 0; i < checkboxes.length; i++) {
+            checkboxes[i].checked = checkbox.checked;
+        }
+        this.updateExportCount(tableId);
+    },
+
+    updateExportCount: function(tableId) {
+        var toolbar = document.getElementById('export-toolbar-' + tableId.replace('-table', ''));
+        if (!toolbar) return;
+        var table = document.getElementById(tableId);
+        if (!table) return;
+        var checked = table.querySelectorAll('.row-select:checked').length;
+        var countEl = toolbar.querySelector('.export-count');
+        if (countEl) countEl.textContent = 'عدد المحدد: ' + checked;
+    },
+
+    bindExportToolbar: function(tableId) {
+        var self = this;
+        var toolbar = document.getElementById('export-toolbar-' + tableId.replace('-table', ''));
+        if (!toolbar) return;
+        if (toolbar.getAttribute('data-bound') === '1') return;
+        toolbar.setAttribute('data-bound', '1');
+
+        toolbar.innerHTML =
+            '<label class="export-select-all"><input type="checkbox" class="select-all-toolbar" onchange="app.toggleSelectAll(this,\'' + tableId + '\')"> تحديد الكل</label>' +
+            '<span class="export-count">عدد المحدد: 0</span>' +
+            '<span class="export-sep">|</span>' +
+            '<button class="btn btn-sm btn-export" data-format="csv" onclick="app.exportTable(\'' + tableId + '\',\'csv\')">📄 CSV</button>' +
+            '<button class="btn btn-sm btn-export" data-format="xlsx" onclick="app.exportTable(\'' + tableId + '\',\'xlsx\')">📊 Excel</button>' +
+            '<button class="btn btn-sm btn-export" data-format="pdf" onclick="app.exportTable(\'' + tableId + '\',\'pdf\')">🖨️ PDF</button>';
+
+        // Listen to row checkbox changes
+        var table = document.getElementById(tableId);
+        if (table) {
+            table.addEventListener('change', function(e) {
+                if (e.target.classList.contains('row-select')) {
+                    self.updateExportCount(tableId);
+                }
+            });
+        }
+    },
+
+    exportTable: function(tableId, format) {
+        var config = this._exportConfigs[tableId];
+        if (!config) {
+            this.showToast('لا توجد إعدادات تصدير لهذا الجدول', 'warning');
+            return;
+        }
+
+        var table = document.getElementById(tableId);
+        if (!table) return;
+        var rows = table.querySelectorAll('tbody tr');
+        if (rows.length === 0) {
+            this.showToast('لا توجد بيانات للتصدير', 'warning');
+            return;
+        }
+
+        var checkedBoxes = table.querySelectorAll('.row-select:checked');
+        var useChecked = checkedBoxes.length > 0;
+
+        var exportRows = [];
+        for (var i = 0; i < rows.length; i++) {
+            var cb = rows[i].querySelector('.row-select');
+            if (useChecked && (!cb || !cb.checked)) continue;
+            var dataStr = cb ? cb.getAttribute('data-row') : null;
+            if (dataStr) {
+                try {
+                    exportRows.push(JSON.parse(dataStr));
+                } catch(e) {}
+            }
+        }
+
+        if (exportRows.length === 0) {
+            this.showToast('لم يتم العثور على بيانات للصفوف المحددة', 'warning');
+            return;
+        }
+
+        var self = this;
+        var payload = JSON.stringify({
+            format: format,
+            columns: config.columns,
+            rows: exportRows,
+            title: config.title,
+            filename: config.filename + '_' + this.formatDate(new Date())
+        });
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', API_BASE + '/export', true);
+        xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+        xhr.responseType = format === 'pdf' ? '' : 'blob';
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    if (format === 'pdf') {
+                        var win = window.open('', '_blank');
+                        win.document.write(xhr.responseText);
+                        win.document.close();
+                    } else {
+                        var blob = xhr.response;
+                        var ext = format === 'csv' ? '.csv' : '.xlsx';
+                        var url = URL.createObjectURL(blob);
+                        var a = document.createElement('a');
+                        a.href = url;
+                        a.download = config.filename + ext;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }
+                    self.showToast('تم التصدير بنجاح');
+                } else {
+                    self.showToast('فشل التصدير', 'error');
+                }
+            }
+        };
+        xhr.send(payload);
+    },
+
+    formatDate: function(d) {
+        return d.getFullYear() + '-' + this.padZero(d.getMonth()+1) + '-' + this.padZero(d.getDate());
+    },
+
     // ==================== SETTINGS TAB ====================
 
     getShiftName: function(shiftId) {
@@ -1730,7 +1805,11 @@ var app = {
         return shiftId === 'morning' ? 'صباحي' : shiftId === 'evening' ? 'مسائي' : shiftId;
     },
 
-    loadSettingsTab: function() {
+    loadUsersTab: function() {
+        this.loadUsers();
+    },
+
+    loadShiftsTab: function() {
         var self = this;
         this.apiCall(API_BASE + '/settings', 'GET', null, function(err, data) {
             if (err || !data) return;
@@ -1738,7 +1817,9 @@ var app = {
             document.getElementById('setting-company-name').value = data.company_name || '';
         });
         this.loadShifts();
-        this.loadUsers();
+    },
+
+    loadBackupsTab: function() {
         this.loadBackups();
     },
 
@@ -2098,33 +2179,6 @@ var app = {
             }
         };
         xhr.send(formData);
-    },
-
-    // ==================== SYSTEM RESET ====================
-    openResetSystemModal: function() {
-        document.getElementById('reset-system-password').value = '';
-        this.openModal('reset-system');
-    },
-
-    handleResetSystem: function() {
-        var self = this;
-        var password = document.getElementById('reset-system-password').value;
-        if (!password) {
-            self.showToast('أدخل كلمة مرور المدير', 'warning');
-            return;
-        }
-        this.confirmAction('تأكيد إعادة تعيين النظام', 'هل أنت متأكد من إعادة تعيين النظام؟ سيتم حذف جميع سجلات الحضور، الخزنة، السلف، الخصومات، المكافآت، الرواتب، ومصروفات المصنع. كما سيتم إعادة تعيين كميات المخزون إلى صفر. لا يمكن التراجع عن هذه العملية!', function() {
-            self.apiCall(API_BASE + '/settings/reset', 'POST', { password: password }, function(err, result) {
-                if (err || !result.success) {
-                    self.showToast((err ? err.message : '') || 'فشل في إعادة التعيين', 'error');
-                    return;
-                }
-                self.showToast('تم إعادة تعيين النظام بنجاح!');
-                document.getElementById('modal-reset-system').classList.remove('open');
-                self.loadTab(self.activeTab);
-                self.loadDashboardData();
-            });
-        });
     },
 
     // ==================== USER PERMISSIONS ====================
