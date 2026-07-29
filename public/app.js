@@ -655,7 +655,7 @@ var app = {
                                    '<button class="action-btn" title="حذف موظف" onclick="app.deleteEmployee(' + emp.id + ')">🗑️</button>';
                 }
 
-                var rowData = JSON.stringify({employee_code:emp.employee_code||'',name:emp.name,national_id:emp.national_id||'',phone:emp.phone||'',pay_type:payTypeText,rate:text,status:statusText});
+                var rowData = JSON.stringify({employee_code:emp.employee_code||'',name:emp.name,national_id:emp.national_id||'',phone:emp.phone||'',pay_type:payTypeText,rate:rateText,status:statusText});
                 tr.innerHTML = '<td><input type="checkbox" class="row-select" data-row=\'' + rowData.replace(/'/g,'&#39;') + '\'></td>' +
                                '<td>' + (emp.employee_code || '-') + '</td>' +
                                '<td><strong>' + emp.name + '</strong></td>' +
