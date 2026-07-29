@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BVC الرحمة - نظام الإدارة المتكامل</title>
+    <!-- Google Fonts: Tajawal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Login Overlay -->
+    <div id="login-overlay">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo">BVC</div>
+                <h1>BVC الرحمة</h1>
+                <p>نظام الإدارة والرواتب</p>
+            </div>
+            <form id="form-login">
+                <div class="form-group">
+                    <label for="login-username">اسم المستخدم</label>
+                    <input type="text" id="login-username" class="form-control" placeholder="أدخل اسم المستخدم" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">كلمة المرور</label>
+                    <input type="password" id="login-password" class="form-control" placeholder="أدخل كلمة المرور" required autocomplete="current-password">
+                </div>
+                <div id="login-error" class="login-error"></div>
+                <div class="login-actions">
+                    <button type="submit" class="btn btn-primary login-btn">تسجيل الدخول</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon">BVC</div>
+                <div class="logo-text">
+                    <h2>BVC الرحمة</h2>
+                    <span>نظام الإدارة والرواتب</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-menu">
+                <a href="#" class="menu-item active" data-tab="dashboard">
+                    <span class="menu-icon">📊</span>
+                    <span class="menu-title">لوحة التحكم</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="employees">
+                    <span class="menu-icon">👥</span>
+                    <span class="menu-title">إدارة الموظفين</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="attendance">
+                    <span class="menu-icon">📅</span>
+                    <span class="menu-title">الحضور والانصراف</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="finance">
+                    <span class="menu-icon">💰</span>
+                    <span class="menu-title">السلف والمالية</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="payroll">
+                    <span class="menu-icon">🧾</span>
+                    <span class="menu-title">حساب الرواتب</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="inventory">
+                    <span class="menu-icon">📦</span>
+                    <span class="menu-title">مخزون BVC</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="treasury">
+                    <span class="menu-icon">🏦</span>
+                    <span class="menu-title">الخزنة</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="permissions" id="menu-permissions" style="display:none;">
+                    <span class="menu-icon">🔐</span>
+                    <span class="menu-title">صلاحيات المستخدمين</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="settings">
+                    <span class="menu-icon">⚙️</span>
+                    <span class="menu-title">الإعدادات</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer" id="sidebar-footer">
+                <div id="sidebar-user-area" class="sidebar-user-area" style="display:none;">
+                    <span id="sidebar-user-name" class="sidebar-user-name"></span>
+                    <button id="btn-logout" class="btn btn-sm btn-logout">تسجيل الخروج</button>
+                </div>
+                <p>إصدار 1.0.0 (Windows 7/10)</p>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-title">
+                    <h1 id="page-title">لوحة التحكم</h1>
+                    <p id="page-subtitle">نظرة عامة على حالة العمل اليوم</p>
+                </div>
+                <div class="header-actions">
+                    <span class="date-badge" id="today-date-badge">---</span>
+                    <button class="btn btn-primary" id="btn-quick-attendance">+ تسجيل حضور سريع</button>
+                </div>
+            </header>
+
+            <!-- Container for dynamic tabs -->
+            <div class="content-container">
+
+                <!-- 1. Dashboard Tab -->
+                <section id="tab-dashboard" class="tab-content active">
+                    <div class="stats-grid">
+                        <div class="stat-card card-teal">
+                            <div class="stat-info">
+                                <span class="stat-label">الموظفون النشطون</span>
+                                <h3 class="stat-value" id="stat-employees-count">0</h3>
+                            </div>
+                            <div class="stat-icon-wrapper">👥</div>
+                        </div>
+                        <div class="stat-card card-blue">
+                            <div class="stat-info">
+                                <span class="stat-label">حضور اليوم</span>
+                                <h3 class="stat-value" id="stat-attendance-today">0</h3>
+                            </div>
+                            <div class="stat-icon-wrapper">📅</div>
+                        </div>
+                        <div class="stat-card card-orange">
+                            <div class="stat-info">
+                                <span class="stat-label">رصيد الخزنة</span>
+                                <h3 class="stat-value" id="stat-treasury-balance">0 ج.م</h3>
+                            </div>
+                            <div class="stat-icon-wrapper">🏦</div>
+                        </div>
+                        <div class="stat-card card-red">
+                            <div class="stat-info">
+                                <span class="stat-label">أصناف تحت حد الطلب</span>
+                                <h3 class="stat-value" id="stat-low-stock">0</h3>
+                            </div>
+                            <div class="stat-icon-wrapper">⚠️</div>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard Sections -->
+                    <div class="dashboard-sections">
+                        <div class="card flex-1">
+                            <div class="card-header">
+                                <h3>عمليات الحضور الأخيرة (اليوم)</h3>
+                                <button class="btn btn-secondary btn-sm" onclick="app.switchTab('attendance')">عرض الكل</button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table" id="dashboard-attendance-table">
+                                        <thead>
+                                            <tr>
+                                                <th>اسم الموظف</th>
+                                                <th>الوردية</th>
+                                                <th>الحضور</th>
+                                                <th>الانصراف</th>
+                                                <th>ساعات العمل</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td colspan="5" class="text-center text-muted">لا توجد سجلات حضور لليوم بعد.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card w-350">
+                            <div class="card-header">
+                                <h3>تنبيهات المخزون (BVC Stock)</h3>
+                                <button class="btn btn-secondary btn-sm" onclick="app.switchTab('inventory')">إدارة المخزن</button>
+                            </div>
+                            <div class="card-body">
+                                <ul class="stock-alerts-list" id="dashboard-stock-alerts">
+                                    <li class="no-alerts text-muted">المخزون بحالة ممتازة ولا توجد تنبيهات.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. Employees Tab -->
+                <section id="tab-employees" class="tab-content">
+                    <div class="filter-bar card" style="display: flex; gap: 12px; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-primary btn-sm" id="btn-employees-active" onclick="app.switchEmployeeView('active')">الموظفون النشطون</button>
+                            <button class="btn btn-secondary btn-sm" id="btn-employees-archived" onclick="app.switchEmployeeView('inactive')">الأرشيف (الموقوفون)</button>
+                        </div>
+                        <button class="btn btn-primary" id="btn-add-employee">+ إضافة موظف جديد</button>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 id="employees-table-title">قائمة الموظفين النشطين</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table" id="employees-table">
+                                    <thead>
+                                        <tr>
+                                            <th>الكود</th>
+                                            <th>الاسم</th>
+                                            <th>رقم الهوية</th>
+                                            <th>الهاتف</th>
+                                            <th>نوع الحساب</th>
+                                            <th>سعر الساعة / الوردية</th>
+                                            <th>الوردية الافتراضية</th>
+                                            <th>الحالة</th>
+                                            <th>الإجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Dynamic rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. Attendance Tab -->
+                <section id="tab-attendance" class="tab-content">
+                    <div class="filter-bar card">
+                        <div class="filter-inputs">
+                            <div class="form-group">
+                                <label for="attendance-filter-start">من تاريخ</label>
+                                <input type="text" placeholder="YYYY-MM-DD" id="attendance-filter-start" class="date-input">
+                            </div>
+                            <div class="form-group">
+                                <label for="attendance-filter-end">الى تاريخ</label>
+                                <input type="text" placeholder="YYYY-MM-DD" id="attendance-filter-end" class="date-input">
+                            </div>
+                            <button class="btn btn-primary btn-filter" id="btn-filter-attendance">تصفية السجلات</button>
+                        </div>
+                        <button class="btn btn-success" id="btn-log-attendance">+ تسجيل حضور جديد</button>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table" id="attendance-table">
+                                    <thead>
+                                        <tr>
+                                            <th>التاريخ</th>
+                                            <th>اسم الموظف</th>
+                                            <th>نوع الحساب</th>
+                                            <th>الوردية</th>
+                                            <th>وقت الحضور</th>
+                                            <th>وقت الانصراف</th>
+                                            <th>الساعات</th>
+                                            <th>الاضافي</th>
+                                            <th>التأخر / العذر</th>
+                                            <th>الاجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Dynamic rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. Loans & Finance Tab -->
+                <section id="tab-finance" class="tab-content">
+                    <div class="finance-layout">
+                        <!-- Left Side: Outstanding Balances -->
+                        <div class="card w-350">
+                            <div class="card-header">
+                                <h3>أرصدة السلف المستحقة</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group" style="margin-bottom:10px">
+                                    <input type="text" id="loan-balances-search" class="form-control" placeholder="🔍 بحث عن موظف..." oninput="app.filterLoanBalances()">
+                                </div>
+                                <div class="loan-balances-list" id="loan-balances-container">
+                                    <!-- Dynamic balances list -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Side: Transactions History -->
+                        <div class="card flex-1">
+                            <div class="card-header">
+                                <h3>سجل السلف، المكافآت، والخصومات</h3>
+                                <button class="btn btn-primary" id="btn-add-transaction">+ إضافة عملية مالية</button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table" id="transactions-table">
+                                        <thead>
+                                            <tr>
+                                                <th>التاريخ</th>
+                                                <th>اسم الموظف</th>
+                                                <th>النوع</th>
+                                                <th>المبلغ</th>
+                                                <th>التفاصيل/السبب</th>
+                                                <th>حالة التسوية</th>
+                                                <th>الإجراءات</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <!-- Dynamic rows -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 5. Payroll Tab -->
+                <section id="tab-payroll" class="tab-content">
+                    <div class="filter-bar card">
+                        <div class="filter-inputs">
+                            <div class="form-group">
+                                <label for="payroll-start-date">تاريخ بدء الفترة الأسبوعية</label>
+                                <input type="text" placeholder="YYYY-MM-DD" id="payroll-start-date" class="date-input">
+                            </div>
+                            <div class="form-group">
+                                <label for="payroll-end-date">تاريخ نهاية الفترة الأسبوعية</label>
+                                <input type="text" placeholder="YYYY-MM-DD" id="payroll-end-date" class="date-input">
+                            </div>
+                            <button class="btn btn-primary btn-filter" id="btn-calculate-payroll">احسب الرواتب للجميع</button>
+                        </div>
+                        <div class="payroll-actions-header" style="display: none;" id="payroll-export-actions">
+                            <button class="btn btn-success" id="btn-save-payroll">🔐 إغلاق وتسجيل مسير الرواتب</button>
+                            <button class="btn btn-secondary" id="btn-export-payroll">📥 تصدير كشف Excel (CSV)</button>
+                        </div>
+                    </div>
+
+                    <!-- Calculated Payroll Preview -->
+                    <div class="card" id="payroll-preview-card" style="display: none;">
+                        <div class="card-header">
+                            <h3>كشف رواتب الموظفين المقترح (الفترة المحددة)</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group" style="margin-bottom:10px">
+                                <input type="text" id="payroll-search" class="form-control" placeholder="🔍 بحث عن موظف..." oninput="app.filterPayrollTable()">
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table" id="payroll-table">
+                                    <thead>
+                                        <tr>
+                                            <th>اسم الموظف</th>
+                                            <th>طريقة الدفع</th>
+                                            <th>سعر الحساب</th>
+                                            <th>العمل الفعلي</th>
+                                            <th>الراتب الأساسي</th>
+                                            <th>الإضافي (للوردية)</th>
+                                            <th>المكافآت (+)</th>
+                                            <th>الخصومات (-)</th>
+                                            <th>السلف القائمة</th>
+                                            <th style="width: 140px;">الخصم من السلفة (-)</th>
+                                            <th>صافي الراتب المستحق</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="payroll-tbody">
+                                        <!-- Dynamic calculated items -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 6. Inventory Tab -->
+                <section id="tab-inventory" class="tab-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>مخزن أصناف BVC Stock</h3>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button class="btn btn-success btn-sm" id="btn-export-stock-xlsx">📥 تصدير Excel</button>
+                                <div style="position: relative; display: inline-block;">
+                                    <button class="btn btn-primary btn-sm" id="btn-import-stock-xlsx">📤 استيراد Excel</button>
+                                    <input type="file" id="stock-xlsx-file-input" accept=".xlsx" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
+                                </div>
+                                <button class="btn btn-primary" id="btn-add-inventory">+ إضافة صنف جديد للمخزن</button>
+                            </div>
+                        </div>
+                        <div class="filter-bar">
+                            <div class="filter-inputs">
+                                <div class="form-group">
+                                    <label>بحث بالاسم أو الكود</label>
+                                    <input type="text" id="inventory-search" class="form-control" placeholder="اكتب اسم الصنف أو الكود...">
+                                </div>
+                                <div class="form-group">
+                                    <label>الحد الأدنى</label>
+                                    <select id="inventory-stock-filter" class="form-control">
+                                        <option value="all">الكل</option>
+                                        <option value="low">ناقص فقط</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-top:22px;">
+                                    <button class="btn btn-secondary btn-filter" id="btn-filter-inventory">بحث</button>
+                                </div>
+                            </div>
+                            <div style="font-size:0.85rem;color:#64748b;font-weight:600;">
+                                <span id="inventory-count">0</span> صنف
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table" id="inventory-table">
+                                    <thead>
+                                        <tr>
+                                            <th>كود الصنف</th>
+                                            <th>اسم الصنف</th>
+                                            <th>الكمية</th>
+                                            <th>الوحدة</th>
+                                            <th>سعر القطاعي</th>
+                                            <th>اخر شراء</th>
+                                            <th>متوسط الشراء</th>
+                                            <th>سعر السوق</th>
+                                            <th>حد الطلب</th>
+                                            <th>الاجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Dynamic rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 7. Treasury Tab -->
+                <section id="tab-treasury" class="tab-content">
+                    <div class="stats-grid" style="margin-bottom:20px;">
+                        <div class="stat-card card-teal">
+                            <div class="stat-info">
+                                <span class="stat-label">الرصيد الحالي</span>
+                                <h3 class="stat-value" id="treasury-balance">0 ج.م</h3>
+                            </div>
+                            <div class="stat-icon-wrapper">💰</div>
+                        </div>
+                        <div class="stat-card card-blue">
+                            <div class="stat-info">
+                                <span class="stat-label">إجمالي الوارد</span>
+                                <h3 class="stat-value" id="treasury-deposits">0 ج.م</h3>
+                            </div>
+                            <div class="stat-icon-wrapper">📥</div>
+                        </div>
+                        <div class="stat-card card-red">
+                            <div class="stat-info">
+                                <span class="stat-label">إجمالي المصروفات</span>
+                                <h3 class="stat-value" id="treasury-withdrawals">0 ج.م</h3>
+                            </div>
+                            <div class="stat-icon-wrapper">📤</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom:20px; display:flex; gap:10px; flex-wrap:wrap;">
+                        <button class="btn btn-success" onclick="app.showTreasuryModal('deposit')">+ ايداع (وارد)</button>
+                        <button class="btn btn-danger" onclick="app.showTreasuryModal('withdraw')">- سحب (مصروف)</button>
+                        <button class="btn btn-secondary" onclick="app.loadTreasury()">تحديث</button>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>سجل المعاملات المالية</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table" id="treasury-table">
+                                    <thead>
+                                        <tr>
+                                            <th>التاريخ</th>
+                                            <th>النوع</th>
+                                            <th>المبلغ</th>
+                                            <th>الوصف</th>
+                                            <th>التصنيف</th>
+                                            <th>الرصيد بعد</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="treasury-table-body">
+                                        <tr><td colspan="6" class="text-center text-muted">جاري تحميل البيانات...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 8. Permissions Tab -->
+                <section id="tab-permissions" class="tab-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>صلاحيات المستخدمين</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group" style="margin-bottom:24px;">
+                                <label for="perm-user-select" style="font-size:0.9rem;">اختر المستخدم</label>
+                                <select id="perm-user-select" class="form-control" style="width:100%;max-width:400px;"></select>
+                            </div>
+                            <div id="permissions-grid">
+                                <p class="text-muted">اختر مستخدم لعرض صلاحياته</p>
+                            </div>
+                            <div class="modal-footer" style="margin-top:24px;padding:0;">
+                                <button class="btn btn-primary" id="btn-save-permissions">حفظ الصلاحيات</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 9. Settings Tab -->
+                <section id="tab-settings" class="tab-content">
+                    <!-- Users Management -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>إدارة المستخدمين</h3>
+                            <button class="btn btn-primary" id="btn-add-user">+ إضافة مستخدم</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table" id="users-table">
+                                    <thead>
+                                        <tr>
+                                            <th>اسم المستخدم</th>
+                                            <th>الاسم المعروض</th>
+                                            <th>الصلاحية</th>
+                                            <th>الحالة</th>
+                                            <th>آخر دخول</th>
+                                            <th>الاجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Shift Configuration -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>إعدادات الورديات</h3>
+                            <button class="btn btn-primary" id="btn-save-shifts">حفظ الإعدادات</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table" id="shifts-table">
+                                    <thead>
+                                        <tr>
+                                            <th>اسم الوردية</th>
+                                            <th>وقت البداية</th>
+                                            <th>وقت النهاية</th>
+                                            <th>الإجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="shifts-table-body">
+                                        <!-- Dynamic rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button class="btn btn-secondary" id="btn-add-shift" style="margin-top:8px">+ إضافة وردية</button>
+                            <div class="form-row" style="margin-top:12px">
+                                <div class="form-group">
+                                    <label>ساعات العمل قبل الإضافي (ساعة)</label>
+                                    <input type="number" id="setting-overtime-threshold" class="form-control" min="1" max="12" value="8">
+                                </div>
+                                <div class="form-group">
+                                    <label>اسم الشركة</label>
+                                    <input type="text" id="setting-company-name" class="form-control" placeholder="اسم الشركة">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Backup & Restore -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>النسخ الاحتياطي</h3>
+                            <button class="btn btn-success" id="btn-create-backup">إنشاء نسخة احتياطية</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table" id="backups-table">
+                                    <thead>
+                                        <tr>
+                                            <th>اسم الملف</th>
+                                            <th>الحجم</th>
+                                            <th>الاجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System Restore from Another PC -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>استعادة النظام من جهاز آخر</h3>
+                        </div>
+                        <div class="card-body">
+                            <p style="color: #64748b; margin-bottom: 12px;">قم بتحميل ملف النسخة الاحتياطية (.db) من الجهاز الآخر ثم اضغط استعادة. يمكن تحميل النسخة من هنا ونقلها لأي جهاز آخر.</p>
+                            <form id="form-upload-backup" enctype="multipart/form-data" method="post" action="/api/backup/upload">
+                                <div class="form-row" style="align-items: flex-end;">
+                                    <div class="form-group" style="flex: 2;">
+                                        <label for="backup-file-input">ملف النسخة الاحتياطية (.db)</label>
+                                        <input type="file" id="backup-file-input" name="backup_file" accept=".db" class="form-control" style="padding: 6px;">
+                                    </div>
+                                    <div class="form-group" style="flex: 1;">
+                                        <label style="display: block; visibility: hidden;">_</label>
+                                        <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                                            <input type="checkbox" id="backup-restore-now" style="width: 16px; height: 16px;">
+                                            <span>استعادة فورية بعد الرفع</span>
+                                        </label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="display: block; visibility: hidden;">_</label>
+                                        <button type="button" class="btn btn-primary" id="btn-upload-backup">رفع واستعادة</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- System Reset -->
+                    <div class="card" style="border: 2px solid #e74c3c;">
+                        <div class="card-header" style="background: #fdf2f2;">
+                            <h3 style="color: #e74c3c;">⚠️ إعادة تعيين النظام</h3>
+                        </div>
+                        <div class="card-body">
+                            <p style="color: #64748b; margin-bottom: 12px;">سيتم حذف جميع سجلات الحضور والانصراف، الخزنة، السلف، الخصومات، المكافآت، الرواتب المحسوبة، ومصروفات المصنع. كما سيتم إعادة تعيين كميات المخزون إلى صفر. <strong>الموظفون والإعدادات وحسابات المستخدمين لن تتأثر.</strong></p>
+                            <p style="color: #e74c3c; font-weight: 700; margin-bottom: 16px;">⚠️ هذه العملية لا يمكن التراجع عنها! يُنصح بإنشاء نسخة احتياطية أولاً.</p>
+                            <button class="btn btn-danger" id="btn-reset-system" style="background: #e74c3c; color: white;">إعادة تعيين النظام</button>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- ==================== MODALS ==================== -->
+
+    <!-- 1. Employee Modal -->
+    <div id="modal-employee" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2 id="employee-modal-title">إضافة موظف جديد</h2>
+            <form id="form-employee">
+                <input type="hidden" id="employee-id">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="employee-name">اسم الموظف بالكامل</label>
+                        <input type="text" id="employee-name" class="form-control" placeholder="أدخل اسم الموظف" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="employee-code">كود الموظف (تلقائي)</label>
+                        <input type="text" id="employee-code" class="form-control" placeholder="يُولّد تلقائياً" readonly style="background-color: #f0f0f0;">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="employee-phone">رقم الهاتف (اختياري)</label>
+                        <input type="text" id="employee-phone" class="form-control" placeholder="مثال: 01012345678">
+                    </div>
+                    <div class="form-group">
+                        <label for="employee-national-id">رقم الهوية الوطنية</label>
+                        <input type="text" id="employee-national-id" class="form-control" placeholder="مثال: 12345678901234">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="employee-pay-type">نوع الحساب</label>
+                        <select id="employee-pay-type" class="form-control">
+                            <option value="hourly">بالساعة (Hourly)</option>
+                            <option value="shift">بالوردية (Shift)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="employee-rate" id="rate-label">سعر الساعة (ج.م)</label>
+                        <input type="number" id="employee-rate" class="form-control" step="0.5" min="0" placeholder="0.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="employee-shift">الوردية الافتراضية</label>
+                        <select id="employee-shift" class="form-control">
+                            <option value="">-- اختر --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="employee-shift-start">بداية الدوام</label>
+                        <input type="text" id="employee-shift-start" class="date-input" placeholder="HH:MM">
+                    </div>
+                    <div class="form-group">
+                        <label for="employee-shift-end">نهاية الدوام</label>
+                        <input type="text" id="employee-shift-end" class="date-input" placeholder="HH:MM">
+                    </div>
+                </div>
+                <div class="form-group" id="employee-status-group" style="display: none;">
+                    <label for="employee-status">حالة الموظف</label>
+                    <select id="employee-status" class="form-control">
+                        <option value="active">نشط</option>
+                        <option value="inactive">موقوف / غير نشط</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-close">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ الموظف</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. Attendance Modal -->
+    <div id="modal-attendance" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>تسجيل الحضور والانصراف</h2>
+            <form id="form-attendance">
+                <div class="form-group">
+                    <label for="attendance-employee-id">اختر الموظف</label>
+                    <select id="attendance-employee-id" class="form-control" required>
+                        <!-- Dynamic options -->
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="attendance-date">التاريخ</label>
+                        <input type="text" placeholder="YYYY-MM-DD" id="attendance-date" class="date-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="attendance-shift">الوردية</label>
+                        <select id="attendance-shift" class="form-control">
+                            <option value="">-- اختر --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>وقت الحضور</label>
+                        <div class="time-picker">
+                            <input type="number" id="check-in-hour" class="time-input" min="1" max="12" value="8" step="1">
+                            <span class="time-sep">:</span>
+                            <input type="number" id="check-in-min" class="time-input" min="0" max="55" value="0" step="5">
+                            <button type="button" id="check-in-ampm" class="time-ampm-btn" data-value="AM">صباحاً</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>وقت الانصراف</label>
+                        <div class="time-picker">
+                            <input type="number" id="check-out-hour" class="time-input" min="1" max="12" value="4" step="1">
+                            <span class="time-sep">:</span>
+                            <input type="number" id="check-out-min" class="time-input" min="0" max="55" value="0" step="5">
+                            <button type="button" id="check-out-ampm" class="time-ampm-btn" data-value="PM">مساءً</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="attendance-excuse">عذر التاخر / الغياب</label>
+                    <select id="attendance-excuse" class="form-control">
+                        <option value="">بدون عذر</option>
+                        <option value="medical">طبي</option>
+                        <option value="personal">شخصي</option>
+                        <option value="official">رسمي</option>
+                        <option value="other">اخرى</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="attendance-notes">ملاحظات</label>
+                    <input type="text" id="attendance-notes" class="form-control" placeholder="مثال: تأخر بسبب المواصلات، ساعات إضافية">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-close">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">تسجيل البيانات</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 3. Transaction Modal (Finance: Loans/Bonuses/Deductions) -->
+    <div id="modal-transaction" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>إضافة حركة مالية (سلفة / مكافأة / خصم)</h2>
+            <form id="form-transaction">
+                <div class="form-group">
+                    <label for="transaction-employee-id">اختر الموظف</label>
+                    <select id="transaction-employee-id" class="form-control" required>
+                        <!-- Dynamic options -->
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="transaction-type">نوع المعاملة المالية</label>
+                        <select id="transaction-type" class="form-control">
+                            <option value="loan">سلفة (سحب سلفة مالية)</option>
+                            <option value="bonus">مكافأة (+) (إضافة للراتب)</option>
+                            <option value="deduction">خصم (-) (سحب من الراتب)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="transaction-amount">المبلغ (ج.م)</label>
+                        <input type="number" id="transaction-amount" class="form-control" step="1" min="1" placeholder="أدخل القيمة" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="transaction-date">التاريخ</label>
+                    <input type="text" placeholder="YYYY-MM-DD" id="transaction-date" class="date-input" required>
+                </div>
+                <div class="form-group">
+                    <label for="transaction-desc">التفاصيل / السبب</label>
+                    <input type="text" id="transaction-desc" class="form-control" placeholder="مثال: سلفة شخصية، مكافأة أداء، غياب بدون إذن">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-close">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">إضافة المعاملة</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 4. Inventory Modal (BVC Stock) -->
+    <div id="modal-inventory" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2 id="inventory-modal-title">إضافة صنف جديد للمخزن</h2>
+            <form id="form-inventory">
+                <input type="hidden" id="inventory-id">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inventory-name">اسم الصنف</label>
+                        <input type="text" id="inventory-name" class="form-control" placeholder="مثال: شمعة فلتر أولى" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="inventory-code">كود الصنف (الرمز)</label>
+                        <input type="text" id="inventory-code" class="form-control" placeholder="مثال: BVC-SH1" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inventory-quantity">الكمية الحالية</label>
+                        <input type="number" id="inventory-quantity" class="form-control" min="0" placeholder="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="inventory-unit">وحدة القياس</label>
+                        <input type="text" id="inventory-unit" class="form-control" placeholder="مثال: قطعة، كرتونة، متر" value="قطعة" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inventory-purchase">سعر الشراء (التكلفة)</label>
+                        <input type="number" id="inventory-purchase" class="form-control" step="0.5" min="0" placeholder="0.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="inventory-sale">سعر البيع</label>
+                        <input type="number" id="inventory-sale" class="form-control" step="0.5" min="0" placeholder="0.00" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inventory-min">الحد الأدنى للتنبيه</label>
+                        <input type="number" id="inventory-min" class="form-control" min="1" value="5" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="inventory-desc">الوصف</label>
+                        <input type="text" id="inventory-desc" class="form-control" placeholder="وصف موجز للصنف">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-close">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ الصنف</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 5. Fast Check-in/out Modal -->
+    <div id="modal-fast-check" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>تسجيل حضور / انصراف سريع</h2>
+            <form id="form-fast-check">
+                <div class="form-group">
+                    <label for="fast-check-employee-search">اختر الموظف</label>
+                    <div class="searchable-select" id="fast-check-employee-container">
+                        <input type="text" id="fast-check-employee-search" class="form-control" placeholder="ابحث عن موظف..." autocomplete="off">
+                        <input type="hidden" id="fast-check-employee-id" value="">
+                        <div class="searchable-select-dropdown" id="fast-check-employee-dropdown"></div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="fast-check-date">التاريخ</label>
+                        <input type="text" placeholder="YYYY-MM-DD" id="fast-check-date" class="date-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label>الوقت</label>
+                        <div class="time-picker">
+                            <input type="number" id="fast-check-hour" class="time-input" min="1" max="12" value="8" step="1">
+                            <span class="time-sep">:</span>
+                            <input type="number" id="fast-check-min" class="time-input" min="0" max="55" value="0" step="5">
+                            <button type="button" id="fast-check-ampm" class="time-ampm-btn" data-value="AM">صباحاً</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="fast-check-notes">ملاحظات (اختياري)</label>
+                    <input type="text" id="fast-check-notes" class="form-control" placeholder="ملاحظة اختيارية">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-close">إلغاء</button>
+                    <button type="submit" class="btn btn-success">تسجيل السريع</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 6. User Modal -->
+    <div id="modal-user" class="modal">
+        <div class="modal-content" style="width: 440px;">
+            <span class="close-modal">&times;</span>
+            <h2 id="user-modal-title">إضافة مستخدم جديد</h2>
+            <form id="form-user">
+                <input type="hidden" id="user-id">
+                <div class="form-group">
+                    <label for="user-username">اسم المستخدم</label>
+                    <input type="text" id="user-username" class="form-control" placeholder="username" required>
+                </div>
+                <div class="form-group" id="user-password-group">
+                    <label for="user-password">كلمة المرور</label>
+                    <input type="password" id="user-password" class="form-control" placeholder="••••••••" required>
+                </div>
+                <div class="form-group">
+                    <label for="user-display-name">الاسم المعروض</label>
+                    <input type="text" id="user-display-name" class="form-control" placeholder="اسم المستخدم بالعربي">
+                </div>
+                <div class="form-group">
+                    <label for="user-role">الصلاحية</label>
+                    <select id="user-role" class="form-control">
+                        <option value="user">مستخدم</option>
+                        <option value="admin">مدير</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-close">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 7. Reset Password Modal -->
+    <div id="modal-reset-password" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <span class="close-modal">&times;</span>
+            <h2>إعادة تعيين كلمة المرور</h2>
+            <form id="form-reset-password">
+                <input type="hidden" id="reset-user-id">
+                <p id="reset-user-name" style="margin-bottom: 16px; color: #64748b; font-weight: 600;"></p>
+                <div class="form-group">
+                    <label for="reset-password">كلمة المرور الجديدة</label>
+                    <input type="password" id="reset-password" class="form-control" placeholder="••••••••" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-close">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">تحديث</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 8. Treasury Modal -->
+    <div id="modal-treasury" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2 id="treasury-modal-title">ايداع</h2>
+            <form id="form-treasury">
+                <input type="hidden" id="treasury-type" value="deposit">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="treasury-amount">المبلغ (ج.م)</label>
+                        <input type="number" id="treasury-amount" class="form-control" step="1" min="1" placeholder="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="treasury-date">التاريخ</label>
+                        <input type="text" placeholder="YYYY-MM-DD" id="treasury-date" class="date-input" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="treasury-source">المصدر / العميل</label>
+                    <input type="text" id="treasury-source" class="form-control" placeholder="مثال: ابورحمه">
+                </div>
+                <div class="form-group">
+                    <label for="treasury-desc">الوصف</label>
+                    <input type="text" id="treasury-desc" class="form-control" placeholder="وصف المعاملة">
+                </div>
+                <div class="form-group" id="treasury-category-group" style="display:none;">
+                    <label for="treasury-category">التصنيف</label>
+                    <select id="treasury-category" class="form-control">
+                        <option value="رواتب">رواتب</option>
+                        <option value="وقود">وقود</option>
+                        <option value="طعام">طعام</option>
+                        <option value="مواصلات">مواصلات</option>
+                        <option value="علاج">علاج</option>
+                        <option value="جمعيه">جمعيه</option>
+                        <option value="مصروفات عامة">مصروفات عامة</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-close">الغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Progress Modal -->
+    <div id="modal-progress" class="modal">
+        <div class="modal-content" style="max-width: 480px; text-align: center;">
+            <div id="progress-icon" style="font-size: 52px; margin-bottom: 16px;">⏳</div>
+            <h2 id="progress-title" style="margin-bottom: 8px;">جاري المعالجة...</h2>
+            <p id="progress-subtitle" style="margin-bottom: 20px; color: #64748b; font-size: 0.9rem;">يرجى الانتظار حتى اكتمال العملية</p>
+            <div class="progress-bar-wrapper">
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                </div>
+                <div class="progress-bar-info">
+                    <span id="progress-count">0 / 0</span>
+                    <span id="progress-percent">0%</span>
+                </div>
+            </div>
+            <p id="progress-status" style="margin-top: 16px; color: #0d9488; font-weight: 700; font-size: 0.85rem;"></p>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Reset System Password Modal -->
+    <div id="modal-reset-system" class="modal">
+        <div class="modal-content" style="max-width: 440px; text-align: center;">
+            <span class="close-modal">&times;</span>
+            <div style="font-size: 48px; margin-bottom: 12px;">🔴</div>
+            <h2 style="margin-bottom: 8px;">تأكيد إعادة تعيين النظام</h2>
+            <p style="margin-bottom: 16px; color: #64748b;">أدخل كلمة مرور المدير للتأكيد</p>
+            <form id="form-reset-system">
+                <div class="form-group">
+                    <input type="password" id="reset-system-password" class="form-control" placeholder="كلمة مرور المدير" required style="text-align: center; font-size: 16px;">
+                </div>
+                <div style="display: flex; gap: 12px; justify-content: center; margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary btn-close">إلغاء</button>
+                    <button type="submit" class="btn btn-danger" style="background: #e74c3c; color: white;">تأكيد إعادة التعيين</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal (replaces confirm() for IE11) -->
+    <div id="modal-confirm" class="modal">
+        <div class="modal-content" style="max-width: 420px; text-align: center;">
+            <div style="font-size: 48px; margin-bottom: 12px;">⚠️</div>
+            <h2 id="confirm-title" style="margin-bottom: 8px;">تأكيد</h2>
+            <p id="confirm-message" style="margin-bottom: 24px; color: var(--text-secondary, #666);"></p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button class="btn btn-secondary" id="confirm-cancel-btn">إلغاء</button>
+                <button class="btn btn-danger" id="confirm-ok-btn" style="background: var(--color-danger, #e74c3c); color: white;">تأكيد</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
