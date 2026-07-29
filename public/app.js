@@ -36,6 +36,7 @@ var app = {
         this.bindEvents();
         this.setTodayDates();
         this.loadShifts();
+        this.initDarkMode();
 
         if (this.loggedInUser) {
             this.hideLoginForm();
@@ -344,6 +345,96 @@ var app = {
                 var cb = self._confirmCallback;
                 self._confirmCallback = null;
                 cb();
+            }
+        });
+
+        // 8. Global Search
+        var searchTimer = null;
+        document.getElementById('global-search').addEventListener('input', function() {
+            var val = this.value.trim();
+            var resultsEl = document.getElementById('global-search-results');
+            if (val.length < 2) {
+                resultsEl.classList.remove('open');
+                resultsEl.innerHTML = '';
+                return;
+            }
+            if (searchTimer) clearTimeout(searchTimer);
+            searchTimer = setTimeout(function() {
+                self.globalSearch(val);
+            }, 300);
+        });
+        document.getElementById('global-search').addEventListener('blur', function() {
+            setTimeout(function() {
+                document.getElementById('global-search-results').classList.remove('open');
+            }, 250);
+        });
+        document.getElementById('global-search').addEventListener('focus', function() {
+            var resultsEl = document.getElementById('global-search-results');
+            if (resultsEl.children.length > 0) resultsEl.classList.add('open');
+        });
+
+        // 9. Dark Mode Toggle
+        document.getElementById('btn-dark-mode').addEventListener('click', function() {
+            self.toggleDarkMode();
+        });
+
+        // 10. Attendance Print
+        var printAttBtn = document.getElementById('btn-print-attendance');
+        if (printAttBtn) {
+            printAttBtn.addEventListener('click', function() {
+                self.printAttendance();
+            });
+        }
+
+        // 11. Payroll Print
+        var printPayBtn = document.getElementById('btn-print-payroll');
+        if (printPayBtn) {
+            printPayBtn.addEventListener('click', function() {
+                self.printPayroll();
+            });
+        }
+
+        // 12. Keyboard Shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+F -> focus global search
+            if (e.ctrlKey && e.key === 'f') {
+                e.preventDefault();
+                document.getElementById('global-search').focus();
+                return;
+            }
+            // Ctrl+Q -> open quick attendance
+            if (e.ctrlKey && e.key === 'q') {
+                e.preventDefault();
+                if (self.loggedInUser) self.openFastCheckModal();
+                return;
+            }
+            // Ctrl+N -> add employee (if on employee tab)
+            if (e.ctrlKey && e.key === 'n') {
+                e.preventDefault();
+                if (self.loggedInUser && self.activeTab === 'employees') {
+                    self.openEmployeeModal();
+                }
+                return;
+            }
+            // Ctrl+D -> toggle dark mode
+            if (e.ctrlKey && e.key === 'd') {
+                e.preventDefault();
+                self.toggleDarkMode();
+                return;
+            }
+            // ? -> toggle keyboard shortcut help
+            if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                var hint = document.getElementById('kbd-hint');
+                if (hint) {
+                    hint.style.display = hint.style.display === 'none' ? 'block' : 'none';
+                }
+            }
+            // Esc -> close modals
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                var openModals = document.querySelectorAll('.modal.open');
+                for (var mi = 0; mi < openModals.length; mi++) {
+                    openModals[mi].classList.remove('open');
+                }
             }
         });
 
@@ -733,8 +824,12 @@ var app = {
             var tbody = document.querySelector('#attendance-table tbody');
             tbody.innerHTML = '';
             
-            if (err || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">لا توجد سجلات حضور للفترة المحددة.</td></tr>';
+            self.attendanceData = data || [];
+            var printBtn = document.getElementById('btn-print-attendance');
+            if (printBtn) printBtn.style.display = data && data.length > 0 ? 'inline-block' : 'none';
+
+            if (err || !data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">لا توجد سجلات حضور للفترة المحددة.</td></tr>';
                 return;
             }
 
@@ -757,7 +852,8 @@ var app = {
                                '<td>' + lateText + ' ' + excuseText + '</td>' +
                                '<td>' +
                                '<button class="action-btn" title="حذف السجل" onclick="app.deleteAttendance(' + row.id + ')">🗑️</button>' +
-                               '</td>';
+                               '</td>' +
+                               '<td class="no-print"><button class="btn-print" title="طباعة الإذن" onclick="window.open(\'' + API_BASE + '/receipt/attendance?id=' + row.id + '\', \'_blank\', \'width=500,height=600\')">🖨️</button></td>';
                 tbody.appendChild(tr);
             });
         });
@@ -1223,7 +1319,7 @@ var app = {
         document.getElementById('inventory-count').textContent = filtered.length;
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">لا توجد نتائج مطابقة.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">لا توجد نتائج مطابقة.</td></tr>';
             return;
         }
 
@@ -1233,11 +1329,13 @@ var app = {
             var statusHtml = isLow
                 ? '<span class="badge badge-danger">ناقص</span>'
                 : '';
+            var barcodeHtml = row.barcode ? '<code style="direction:ltr;display:inline-block">' + row.barcode + '</code>' : '-';
 
             tr.innerHTML = '<td><code>' + row.item_code + '</code></td>' +
                            '<td><strong>' + row.item_name + '</strong></td>' +
                            '<td class="' + (isLow ? 'text-danger' : '') + '"><strong>' + row.quantity + '</strong></td>' +
                            '<td>' + row.unit + '</td>' +
+                           '<td>' + barcodeHtml + '</td>' +
                            '<td>' + (row.wholesale_price || 0) + '</td>' +
                            '<td>' + (row.last_purchase_price || 0) + '</td>' +
                            '<td>' + (row.avg_purchase_price || 0) + '</td>' +
@@ -1271,8 +1369,9 @@ var app = {
         var sale_price = document.getElementById('inventory-sale').value;
         var min_stock = document.getElementById('inventory-min').value;
         var description = document.getElementById('inventory-desc').value;
+        var barcode = document.getElementById('inventory-barcode').value;
 
-        var payload = { id: id, item_name: item_name, item_code: item_code, quantity: quantity, unit: unit, purchase_price: purchase_price, sale_price: sale_price, min_stock: min_stock, description: description };
+        var payload = { id: id, item_name: item_name, item_code: item_code, quantity: quantity, unit: unit, purchase_price: purchase_price, sale_price: sale_price, min_stock: min_stock, description: description, barcode: barcode };
         var endpoint = id ? '/inventory/update' : '/inventory/add';
 
         this.apiCall(API_BASE + endpoint, 'POST', payload, function(err, result) {
@@ -1313,6 +1412,7 @@ var app = {
             document.getElementById('inventory-sale').value = item.sale_price;
             document.getElementById('inventory-min').value = item.min_stock;
             document.getElementById('inventory-desc').value = item.description;
+            document.getElementById('inventory-barcode').value = item.barcode || '';
 
             document.getElementById('inventory-modal-title').innerText = 'تعديل بيانات الصنف في المخزن';
             self.openModal('inventory');
@@ -1497,6 +1597,128 @@ var app = {
         var ampm = h < 12 ? 'صباحاً' : 'مساءً';
         var h12 = h % 12 || 12;
         return this.padZero(h12) + ':' + m + ' ' + ampm;
+    },
+
+    // Global Search
+    globalSearch: function(query) {
+        var self = this;
+        var resultsEl = document.getElementById('global-search-results');
+        this.apiCall(API_BASE + '/search?q=' + encodeURIComponent(query), 'GET', null, function(err, data) {
+            if (err) return;
+            var html = '';
+            var total = (data.employees ? data.employees.length : 0) + (data.inventory ? data.inventory.length : 0) + (data.transactions ? data.transactions.length : 0) + (data.attendance ? data.attendance.length : 0);
+            if (total === 0) {
+                html = '<div class="search-no-results">لا توجد نتائج</div>';
+            } else {
+                if (data.employees && data.employees.length > 0) {
+                    html += '<div class="search-result-section">👥 الموظفون (' + data.employees.length + ')</div>';
+                    for (var i = 0; i < data.employees.length; i++) {
+                        var emp = data.employees[i];
+                        html += '<div class="search-result-item" data-type="employee" data-id="' + emp.id + '">' +
+                            '<span class="search-result-label">' + emp.name + '</span>' +
+                            '<span class="search-result-sub">' + (emp.employee_code || '') + '</span></div>';
+                    }
+                }
+                if (data.inventory && data.inventory.length > 0) {
+                    html += '<div class="search-result-section">📦 المخزون (' + data.inventory.length + ')</div>';
+                    for (var i = 0; i < data.inventory.length; i++) {
+                        var inv = data.inventory[i];
+                        html += '<div class="search-result-item" data-type="inventory" data-id="' + inv.id + '">' +
+                            '<span class="search-result-label">' + inv.item_name + '</span>' +
+                            '<span class="search-result-sub">كود: ' + inv.item_code + ' | مخزون: ' + inv.quantity + '</span></div>';
+                    }
+                }
+                if (data.transactions && data.transactions.length > 0) {
+                    html += '<div class="search-result-section">💰 الحركات المالية (' + data.transactions.length + ')</div>';
+                    for (var i = 0; i < data.transactions.length; i++) {
+                        var tx = data.transactions[i];
+                        html += '<div class="search-result-item" data-type="transaction" data-id="' + tx.id + '">' +
+                            '<span class="search-result-label">' + tx.employee_name + ' - ' + tx.description + '</span>' +
+                            '<span class="search-result-sub">' + tx.amount + ' ج.م (' + tx.date + ')</span></div>';
+                    }
+                }
+                if (data.attendance && data.attendance.length > 0) {
+                    html += '<div class="search-result-section">📅 الحضور (' + data.attendance.length + ')</div>';
+                    for (var i = 0; i < data.attendance.length; i++) {
+                        var att = data.attendance[i];
+                        html += '<div class="search-result-item" data-type="attendance" data-id="' + att.id + '">' +
+                            '<span class="search-result-label">' + att.employee_name + ' - ' + att.date + '</span>' +
+                            '<span class="search-result-sub">' + att.check_in + ' → ' + att.check_out + '</span></div>';
+                    }
+                }
+            }
+            resultsEl.innerHTML = html;
+            resultsEl.classList.add('open');
+            // Click handlers on result items
+            var items = resultsEl.querySelectorAll('.search-result-item');
+            for (var j = 0; j < items.length; j++) {
+                items[j].addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    var type = this.getAttribute('data-type');
+                    var id = this.getAttribute('data-id');
+                    resultsEl.classList.remove('open');
+                    document.getElementById('global-search').value = '';
+                    if (type === 'employee') {
+                        self.switchTab('employees');
+                        self.editEmployee(parseInt(id));
+                    } else if (type === 'inventory') {
+                        self.switchTab('inventory');
+                        self.editInventoryItem(parseInt(id));
+                    } else if (type === 'transaction' || type === 'attendance') {
+                        self.switchTab('finance');
+                    }
+                });
+            }
+        });
+    },
+
+    // Dark Mode
+    toggleDarkMode: function() {
+        var body = document.body;
+        var btn = document.getElementById('btn-dark-mode');
+        if (body.getAttribute('data-theme') === 'dark') {
+            body.removeAttribute('data-theme');
+            btn.innerHTML = '🌙 الوضع الليلي';
+            localStorage.setItem('bvc_theme', 'light');
+        } else {
+            body.setAttribute('data-theme', 'dark');
+            btn.innerHTML = '☀️ الوضع النهاري';
+            localStorage.setItem('bvc_theme', 'dark');
+        }
+    },
+
+    initDarkMode: function() {
+        var theme = localStorage.getItem('bvc_theme');
+        var btn = document.getElementById('btn-dark-mode');
+        if (theme === 'dark') {
+            document.body.setAttribute('data-theme', 'dark');
+            if (btn) btn.innerHTML = '☀️ الوضع النهاري';
+        } else {
+            document.body.removeAttribute('data-theme');
+            if (btn) btn.innerHTML = '🌙 الوضع الليلي';
+        }
+    },
+
+    // Printable Receipts
+    printAttendance: function() {
+        var data = this.attendanceData || [];
+        if (data.length === 0) return;
+        var id = data[0].id;
+        window.open(API_BASE + '/receipt/attendance?id=' + id, '_blank', 'width=500,height=600');
+    },
+
+    printPayroll: function() {
+        var records = this.currentPayrollData ? this.currentPayrollData.records : [];
+        if (records.length === 0) return;
+        var ids = [];
+        for (var i = 0; i < records.length; i++) {
+            if (records[i].payroll_id) ids.push(records[i].payroll_id);
+        }
+        if (ids.length > 0) {
+            window.open(API_BASE + '/receipt/payroll?id=' + ids[0], '_blank', 'width=500,height=600');
+        } else {
+            self.showToast('احفظ مسير الرواتب أولاً قبل الطباعة');
+        }
     },
 
     // ==================== SETTINGS TAB ====================

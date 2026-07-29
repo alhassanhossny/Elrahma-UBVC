@@ -91,7 +91,8 @@
                     <span id="sidebar-user-name" class="sidebar-user-name"></span>
                     <button id="btn-logout" class="btn btn-sm btn-logout">تسجيل الخروج</button>
                 </div>
-                <p>إصدار 1.0.0 (Windows 7/10)</p>
+                <button id="btn-dark-mode" class="btn-dark-mode">🌙 الوضع الليلي</button>
+                <p style="margin-top:8px;font-size:0.7rem;">إصدار 1.0.0 · <span class="kbd-shortcut">Ctrl+F</span> بحث</p>
             </div>
         </aside>
 
@@ -104,6 +105,11 @@
                     <p id="page-subtitle">نظرة عامة على حالة العمل اليوم</p>
                 </div>
                 <div class="header-actions">
+                    <div class="global-search-wrapper">
+                        <span class="global-search-icon">🔍</span>
+                        <input type="text" id="global-search" class="global-search-input" placeholder="بحث عام (موظف، صنف، حركة...)" autocomplete="off">
+                        <div class="global-search-results" id="global-search-results"></div>
+                    </div>
                     <span class="date-badge" id="today-date-badge">---</span>
                     <button class="btn btn-primary" id="btn-quick-attendance">+ تسجيل حضور سريع</button>
                 </div>
@@ -242,6 +248,7 @@
                             <button class="btn btn-primary btn-filter" id="btn-filter-attendance">تصفية السجلات</button>
                         </div>
                         <button class="btn btn-success" id="btn-log-attendance">+ تسجيل حضور جديد</button>
+                        <button class="btn btn-secondary" id="btn-print-attendance" style="display:none;">🖨️ طباعة</button>
                     </div>
 
                     <div class="card">
@@ -260,6 +267,7 @@
                                             <th>الاضافي</th>
                                             <th>التأخر / العذر</th>
                                             <th>الاجراءات</th>
+                                            <th class="no-print">طباعة</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -336,6 +344,7 @@
                         <div class="payroll-actions-header" style="display: none;" id="payroll-export-actions">
                             <button class="btn btn-success" id="btn-save-payroll">🔐 إغلاق وتسجيل مسير الرواتب</button>
                             <button class="btn btn-secondary" id="btn-export-payroll">📥 تصدير كشف Excel (CSV)</button>
+                            <button class="btn btn-secondary" id="btn-print-payroll">🖨️ طباعة</button>
                         </div>
                     </div>
 
@@ -418,6 +427,7 @@
                                             <th>اسم الصنف</th>
                                             <th>الكمية</th>
                                             <th>الوحدة</th>
+                                            <th>باركود</th>
                                             <th>سعر القطاعي</th>
                                             <th>اخر شراء</th>
                                             <th>متوسط الشراء</th>
@@ -844,6 +854,10 @@
                         <label for="inventory-code">كود الصنف (الرمز)</label>
                         <input type="text" id="inventory-code" class="form-control" placeholder="مثال: BVC-SH1" required>
                     </div>
+                    <div class="form-group">
+                        <label for="inventory-barcode">باركود (اختياري)</label>
+                        <input type="text" id="inventory-barcode" class="form-control barcode-input" placeholder="مسح أو إدخال الباركود">
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -1077,6 +1091,16 @@
         </div>
     </div>
 
+    <!-- Keyboard shortcut hints (hidden, shown via JS) -->
+    <div id="kbd-hint" style="display:none;position:fixed;bottom:16px;left:16px;z-index:3000;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:12px 16px;font-size:0.75rem;box-shadow:0 4px 12px rgba(0,0,0,0.1);font-weight:600;">
+        <div style="margin-bottom:6px;color:#0d9488;font-weight:700;">اختصارات لوحة المفاتيح</div>
+        <div><span class="kbd-shortcut">Ctrl+F</span> بحث عام</div>
+        <div><span class="kbd-shortcut">Ctrl+Q</span> تسجيل حضور سريع</div>
+        <div><span class="kbd-shortcut">Ctrl+N</span> إضافة موظف جديد</div>
+        <div><span class="kbd-shortcut">Ctrl+D</span> الوضع الليلي</div>
+        <div><span class="kbd-shortcut">Esc</span> إغلاق النافذة المنبثقة</div>
+        <div style="margin-top:6px;text-align:center;"><span class="kbd-shortcut">?</span> إظهار / إخفاء المساعدة</div>
+    </div>
     <script src="app.js"></script>
 </body>
 </html>

@@ -114,13 +114,12 @@ def init_db():
         )
     ''')
     
-    # Unique index: one record per employee/date/shift
+    # Indexes (must be created AFTER all referenced tables exist)
     try:
         cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_unique_emp_date_shift ON attendance(employee_id, date, shift)")
     except sqlite3.OperationalError:
         pass
 
-    # Indexes for payroll queries (employee_id + date range)
     try:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, date)")
     except sqlite3.OperationalError:
@@ -133,6 +132,26 @@ def init_db():
 
     try:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_emp_payroll ON transactions(employee_id, payroll_id)")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_emp_date ON transactions(employee_id, date)")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cashbox_date ON cashbox(date)")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_employee_ledger_emp ON employee_ledger(employee_id, date)")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_inventory_barcode ON inventory(barcode)")
     except sqlite3.OperationalError:
         pass
 
@@ -191,7 +210,7 @@ def init_db():
         )
     ''')
     
-    # Migration: add inventory price columns
+    # Migration: add inventory price columns + barcode
     for col, typ, default in [
         ('wholesale_price', 'REAL', 0), ('market_price', 'REAL', 0),
         ('last_purchase_price', 'REAL', 0), ('avg_purchase_price', 'REAL', 0),
@@ -201,6 +220,10 @@ def init_db():
             cursor.execute(f"SELECT {col} FROM inventory LIMIT 1")
         except sqlite3.OperationalError:
             cursor.execute(f"ALTER TABLE inventory ADD COLUMN {col} {typ} DEFAULT {default}")
+    try:
+        cursor.execute("SELECT barcode FROM inventory LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE inventory ADD COLUMN barcode TEXT DEFAULT ''")
     
     # 6. Cashbox (Treasury) Table
     cursor.execute('''
@@ -333,6 +356,7 @@ def init_db():
 # Helper functions for database access
 _db_conn = None
 _db_conn_lock = 0
+_transaction_depth = 0
 
 def get_conn():
     global _db_conn
@@ -348,6 +372,28 @@ def get_conn():
                 pass
             _db_conn = get_db_connection()
     return _db_conn
+
+def begin_transaction():
+    global _transaction_depth
+    if _transaction_depth == 0:
+        conn = get_conn()
+        conn.execute("BEGIN IMMEDIATE")
+    _transaction_depth += 1
+
+def commit_transaction():
+    global _transaction_depth
+    _transaction_depth -= 1
+    if _transaction_depth <= 0:
+        _transaction_depth = 0
+        conn = get_conn()
+        conn.commit()
+
+def rollback_transaction():
+    global _transaction_depth
+    if _transaction_depth > 0:
+        _transaction_depth = 0
+        conn = get_conn()
+        conn.rollback()
 
 def query_db(query, args=(), one=False):
     conn = get_conn()
@@ -367,12 +413,26 @@ def execute_db(query, args=()):
         last_id = cursor.lastrowid
         rowcount = cursor.rowcount
         conn.commit()
-        print(f"DB EXEC: rows_affected={rowcount}, last_id={last_id}")
         return last_id
     except Exception as e:
-        print(f"DB EXEC ERROR: {e}")
-        print(f"  Query: {query}")
-        print(f"  Args: {args}")
+        conn.rollback()
+        raise
+    finally:
+        pass
+
+def execute_db_many(queries_args):
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+        last_ids = []
+        for query, args in queries_args:
+            cursor.execute(query, args)
+            last_ids.append(cursor.lastrowid)
+        conn.commit()
+        return last_ids
+    except Exception as e:
+        conn.rollback()
         raise
     finally:
         pass

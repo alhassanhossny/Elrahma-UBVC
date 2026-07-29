@@ -190,11 +190,18 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
             elif path == '/api/users/permissions':
                 self.get_user_permissions(query)
             elif path == '/api/inventory':
-                # If search/limit params present, use search endpoint
                 if query.get('search', [None])[0] or query.get('limit', [None])[0] or query.get('offset', [None])[0] or query.get('stock', [None])[0]:
                     self.get_inventory_search(query)
                 else:
                     self.get_inventory()
+            elif path == '/api/search':
+                self.global_search(query)
+            elif path == '/api/inventory/barcode-lookup':
+                self.barcode_lookup(query)
+            elif path == '/api/receipt/attendance':
+                self.receipt_attendance(query)
+            elif path == '/api/receipt/payroll':
+                self.receipt_payroll(query)
             else:
                 # Simple routes (no query params needed)
                 simple_routes = {
@@ -257,6 +264,7 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
                 '/api/backup/restore': self.restore_backup,
                 '/api/backup/delete': self.delete_backup,
                 '/api/inventory/import-process': self.import_process_batch,
+                '/api/inventory/barcode-update': self.barcode_update,
                 '/api/shifts/save': self.save_shifts,
                 '/api/shifts/delete': self.delete_shift,
             }
@@ -708,22 +716,39 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
         if not t_id:
             self.send_json_response({"error": "رقم الحركة مطلوب"}, 400)
             return
-        
-        # Don't allow deleting transactions already settled in a payroll
+
         tx = db.query_db("SELECT payroll_id, type, amount, employee_id, date, description FROM transactions WHERE id=?", (t_id,), one=True)
+
         if tx and tx['payroll_id']:
             self.send_json_response({"error": "لا يمكن حذف حركة مالية تم تسويتها في مسير رواتب مغلق"}, 400)
             return
 
-        # If deleting a loan, reverse the treasury withdrawal
-        if tx and tx['type'] == 'loan':
-            emp = db.query_db("SELECT name FROM employees WHERE id=?", (tx['employee_id'],), one=True)
-            emp_name = emp['name'] if emp else ''
-            desc = f'سلفة للموظف {emp_name}' + (f' - {tx["description"]}' if tx['description'] else '')
-            self._treasury_reverse(desc, tx['date'])
+        conn = db.get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.cursor()
 
-        db.execute_db("DELETE FROM transactions WHERE id=?", (t_id,))
-        self.send_json_response({"success": True})
+            if tx and tx['type'] == 'loan':
+                rev_row = cursor.execute("SELECT id, type, amount FROM cashbox WHERE description LIKE ? ORDER BY id DESC LIMIT 1", ('%' + f'سلفة للموظف' + '%',)).fetchone()
+                if rev_row:
+                    rev_type = 'deposit' if rev_row['type'] == 'withdrawal' else 'withdrawal'
+                    r = cursor.execute("SELECT COALESCE(SUM(CASE WHEN type='deposit' THEN amount ELSE 0 END), 0) as deposits, COALESCE(SUM(CASE WHEN type='withdrawal' THEN amount ELSE 0 END), 0) as withdrawals FROM cashbox", one=True).fetchone()
+                    deposits, withdrawals = r['deposits'], r['withdrawals']
+                    bal = deposits - withdrawals
+                    if rev_type == 'deposit':
+                        bal += rev_row['amount']
+                    else:
+                        bal -= rev_row['amount']
+                    cursor.execute("INSERT INTO cashbox (date, type, amount, source, description, category, balance_after) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                   (tx['date'], rev_type, rev_row['amount'], 'عكس حذف سلفة', 'عكس: سلفة للموظف', '', bal))
+
+            cursor.execute("DELETE FROM transactions WHERE id=?", (t_id,))
+            conn.commit()
+            self.send_json_response({"success": True})
+        except Exception as e:
+            conn.rollback()
+            server_log(f"delete_transaction failed, rolled back: {e}")
+            self.send_json_response({"error": f"فشل حذف الحركة: {str(e)}"}, 500)
 
     # API Handlers: Inventory (BVC Stock)
     def get_inventory(self):
@@ -778,6 +803,7 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
         sale_price = float(data.get('sale_price', 0))
         min_stock = int(data.get('min_stock', 5))
         description = data.get('description', '').strip()
+        barcode = data.get('barcode', '').strip()
 
         if not item_name or not item_code:
             self.send_json_response({"error": "الاسم والكود مطلوبان"}, 400)
@@ -785,9 +811,9 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
 
         try:
             db.execute_db('''
-                INSERT INTO inventory (item_name, item_code, quantity, unit, purchase_price, sale_price, min_stock, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (item_name, item_code, quantity, unit, purchase_price, sale_price, min_stock, description))
+                INSERT INTO inventory (item_name, item_code, quantity, unit, purchase_price, sale_price, min_stock, description, barcode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (item_name, item_code, quantity, unit, purchase_price, sale_price, min_stock, description, barcode))
             self.send_json_response({"success": True})
         except sqlite3.IntegrityError:
             self.send_json_response({"error": "كود الصنف مسجل مسبقاً لمادة أخرى"}, 400)
@@ -802,6 +828,7 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
         sale_price = float(data.get('sale_price', 0))
         min_stock = int(data.get('min_stock', 5))
         description = data.get('description', '').strip()
+        barcode = data.get('barcode', '').strip()
 
         if not item_id or not item_name or not item_code:
             self.send_json_response({"error": "البيانات غير مكتملة"}, 400)
@@ -810,9 +837,9 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
         try:
             db.execute_db('''
                 UPDATE inventory
-                SET item_name=?, item_code=?, quantity=?, unit=?, purchase_price=?, sale_price=?, min_stock=?, description=?, updated_at=CURRENT_TIMESTAMP
+                SET item_name=?, item_code=?, quantity=?, unit=?, purchase_price=?, sale_price=?, min_stock=?, description=?, barcode=?, updated_at=CURRENT_TIMESTAMP
                 WHERE id=?
-            ''', (item_name, item_code, quantity, unit, purchase_price, sale_price, min_stock, description, item_id))
+            ''', (item_name, item_code, quantity, unit, purchase_price, sale_price, min_stock, description, barcode, item_id))
             self.send_json_response({"success": True})
         except sqlite3.IntegrityError:
             self.send_json_response({"error": "كود الصنف مسجل مسبقاً لمادة أخرى"}, 400)
@@ -824,6 +851,134 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
             return
         db.execute_db("DELETE FROM inventory WHERE id=?", (item_id,))
         self.send_json_response({"success": True})
+
+    # Global Search
+    def global_search(self, query):
+        q = query.get('q', [''])[0].strip()
+        if not q or len(q) < 1:
+            self.send_json_response({"employees": [], "inventory": [], "transactions": []})
+            return
+        like = '%' + q + '%'
+        employees = [dict(r) for r in db.query_db(
+            "SELECT id, name, employee_code, phone, national_id FROM employees WHERE name LIKE ? OR employee_code LIKE ? OR phone LIKE ? OR national_id LIKE ? LIMIT 20",
+            (like, like, like, like))]
+        inventory = [dict(r) for r in db.query_db(
+            "SELECT id, item_name, item_code, barcode, quantity, sale_price FROM inventory WHERE item_name LIKE ? OR item_code LIKE ? OR barcode LIKE ? LIMIT 20",
+            (like, like, like))]
+        transactions = [dict(r) for r in db.query_db(
+            "SELECT t.id, t.type, t.amount, t.date, t.description, e.name as employee_name FROM transactions t JOIN employees e ON t.employee_id = e.id WHERE e.name LIKE ? OR t.description LIKE ? OR CAST(t.amount AS TEXT) LIKE ? LIMIT 20",
+            (like, like, like))]
+        attendance = [dict(r) for r in db.query_db(
+            "SELECT a.id, a.date, a.check_in, a.check_out, e.name as employee_name FROM attendance a JOIN employees e ON a.employee_id = e.id WHERE e.name LIKE ? OR a.date LIKE ? LIMIT 20",
+            (like, like))]
+        self.send_json_response({"employees": employees, "inventory": inventory, "transactions": transactions, "attendance": attendance})
+
+    # Barcode Lookup
+    def barcode_lookup(self, query):
+        barcode = query.get('barcode', [''])[0].strip()
+        if not barcode:
+            self.send_json_response({"error": "الباركود مطلوب"}, 400)
+            return
+        item = db.query_db("SELECT * FROM inventory WHERE barcode=? LIMIT 1", (barcode,), one=True)
+        if item:
+            self.send_json_response(dict(item))
+        else:
+            self.send_json_response({"error": "الصنف غير موجود"}, 404)
+
+    def barcode_update(self, data):
+        item_id = data.get('id')
+        barcode = data.get('barcode', '').strip()
+        if not item_id:
+            self.send_json_response({"error": "رقم الصنف مطلوب"}, 400)
+            return
+        db.execute_db("UPDATE inventory SET barcode=? WHERE id=?", (barcode, item_id))
+        self.send_json_response({"success": True})
+
+    # Printable Receipts
+    def receipt_attendance(self, query):
+        attendance_id = query.get('id', [None])[0]
+        if not attendance_id:
+            self.send_json_response({"error": "رقم السجل مطلوب"}, 400)
+            return
+        row = db.query_db('''
+            SELECT a.*, e.name as employee_name, e.employee_code
+            FROM attendance a JOIN employees e ON a.employee_id = e.id
+            WHERE a.id=?
+        ''', (attendance_id,), one=True)
+        if not row:
+            self.send_json_response({"error": "السجل غير موجود"}, 404)
+            return
+        settings = self._get_settings_dict()
+        company = settings.get('company_name', 'شركة الرحمه')
+        html = self._render_receipt_html("إذن حضور وانصراف", company, [
+            ("الموظف", row['employee_name']),
+            ("كود الموظف", row['employee_code']),
+            ("التاريخ", row['date']),
+            ("الوردية", row['shift']),
+            ("حضور", row['check_in']),
+            ("انصراف", row['check_out'] if row['check_out'] != '00:00' else '---'),
+            ("ساعات العمل", str(row['hours_worked'])),
+            ("ساعات إضافي", str(row['overtime_hours'])),
+        ])
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(html.encode('utf-8'))))
+        self.end_headers()
+        self.wfile.write(html.encode('utf-8'))
+
+    def receipt_payroll(self, query):
+        payroll_id = query.get('id', [None])[0]
+        if not payroll_id:
+            self.send_json_response({"error": "رقم المسير مطلوب"}, 400)
+            return
+        row = db.query_db('''
+            SELECT p.*, e.name as employee_name, e.employee_code
+            FROM payroll p JOIN employees e ON p.employee_id = e.id
+            WHERE p.id=?
+        ''', (payroll_id,), one=True)
+        if not row:
+            self.send_json_response({"error": "المسير غير موجود"}, 404)
+            return
+        settings = self._get_settings_dict()
+        company = settings.get('company_name', 'شركة الرحمه')
+        html = self._render_receipt_html("سند صرف راتب", company, [
+            ("الموظف", row['employee_name']),
+            ("كود الموظف", row['employee_code']),
+            ("من تاريخ", row['start_date']),
+            ("إلى تاريخ", row['end_date']),
+            ("الراتب الأساسي", str(row['base_salary'])),
+            ("المكافآت", str(row['total_bonuses'])),
+            ("الخصومات", str(row['total_deductions'])),
+            ("خصم السلف", str(row['total_loans_deducted'])),
+            ("صافي الراتب", str(row['net_salary'])),
+        ])
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(html.encode('utf-8'))))
+        self.end_headers()
+        self.wfile.write(html.encode('utf-8'))
+
+    def _get_settings_dict(self):
+        rows = db.query_db("SELECT key, value FROM system_settings")
+        return {r['key']: r['value'] for r in rows}
+
+    def _render_receipt_html(self, title, company, fields):
+        rows_html = ''
+        for label, val in fields:
+            rows_html += f'<tr><td style="padding:8px 12px;border:1px solid #ccc;font-weight:700;background:#f8fafc">{label}</td><td style="padding:8px 12px;border:1px solid #ccc;text-align:left">{val}</td></tr>\n'
+        return f'''<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>{title}</title>
+<style>body{{font-family:Tajawal,'Segoe UI',sans-serif;padding:40px;max-width:400px;margin:auto}}
+h2{{text-align:center;color:#0d9488;margin-bottom:4px}}
+.sub{{text-align:center;color:#64748b;font-size:0.85rem;margin-bottom:20px}}
+table{{width:100%;border-collapse:collapse}}
+@media print{{body{{padding:20px}}.no-print{{display:none}}}}
+</style></head><body>
+<h2>{company}</h2>
+<p class="sub">{title}</p>
+<table>{rows_html}</table>
+<div style="text-align:center;margin-top:24px" class="no-print">
+<button onclick="window.print()" style="padding:10px 24px;background:#0d9488;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:1rem;font-weight:700">طباعة</button>
+</div></body></html>'''
 
     # API Handlers: Payroll Calculation
     def calculate_payroll(self, start_date, end_date):
@@ -923,45 +1078,59 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": "البيانات غير كاملة"}, 400)
             return
 
-        for rec in records:
-            emp_id = rec.get('employee_id')
-            total_hours = float(rec.get('total_hours', 0))
-            total_shifts = int(rec.get('total_shifts', 0))
-            base_salary = float(rec.get('base_salary', 0))
-            total_bonuses = float(rec.get('total_bonuses', 0))
-            total_deductions = float(rec.get('total_deductions', 0))
-            loan_deduction = float(rec.get('loan_deduction', 0))
-            net_salary = float(rec.get('net_salary', 0))
+        conn = db.get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.cursor()
+            for rec in records:
+                emp_id = rec.get('employee_id')
+                total_hours = float(rec.get('total_hours', 0))
+                total_shifts = int(rec.get('total_shifts', 0))
+                base_salary = float(rec.get('base_salary', 0))
+                total_bonuses = float(rec.get('total_bonuses', 0))
+                total_deductions = float(rec.get('total_deductions', 0))
+                loan_deduction = float(rec.get('loan_deduction', 0))
+                net_salary = float(rec.get('net_salary', 0))
 
-            emp = db.query_db("SELECT name FROM employees WHERE id=?", (emp_id,), one=True)
-            emp_name = emp['name'] if emp else ''
+                emp_row = cursor.execute("SELECT name FROM employees WHERE id=?", (emp_id,)).fetchone()
+                emp_name = emp_row['name'] if emp_row else ''
 
-            # 1. Insert into payroll table
-            payroll_id = db.execute_db('''
-                INSERT INTO payroll (employee_id, start_date, end_date, total_hours, total_shifts, base_salary, total_bonuses, total_deductions, total_loans_deducted, net_salary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (emp_id, start_date, end_date, total_hours, total_shifts, base_salary, total_bonuses, total_deductions, loan_deduction, net_salary))
+                cursor.execute('''
+                    INSERT INTO payroll (employee_id, start_date, end_date, total_hours, total_shifts, base_salary, total_bonuses, total_deductions, total_loans_deducted, net_salary)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (emp_id, start_date, end_date, total_hours, total_shifts, base_salary, total_bonuses, total_deductions, loan_deduction, net_salary))
+                payroll_id = cursor.lastrowid
 
-            # 2. Mark unsettled bonuses/deductions/loans within THIS payroll period as settled
-            db.execute_db('''
-                UPDATE transactions 
-                SET payroll_id = ? 
-                WHERE employee_id = ? AND payroll_id IS NULL AND date >= ? AND date <= ?
-            ''', (payroll_id, emp_id, start_date, end_date))
+                cursor.execute('''
+                    UPDATE transactions SET payroll_id = ? WHERE employee_id = ? AND payroll_id IS NULL AND date >= ? AND date <= ?
+                ''', (payroll_id, emp_id, start_date, end_date))
 
-            # 3. If there was a loan deduction, record it and deposit back to treasury
-            if loan_deduction > 0:
-                db.execute_db('''
-                    INSERT INTO transactions (employee_id, type, amount, date, description, payroll_id)
-                    VALUES (?, 'deduction', ?, ?, 'تسوية سلفة - كشف رواتب أسبوعي', ?)
-                ''', (emp_id, loan_deduction, end_date, payroll_id))
-                self._treasury_add('deposit', loan_deduction, end_date, f'تسوية سلفة من {emp_name} - كشف رواتب', 'رواتب', emp_name)
+                if loan_deduction > 0:
+                    cursor.execute('''
+                        INSERT INTO transactions (employee_id, type, amount, date, description, payroll_id)
+                        VALUES (?, 'deduction', ?, ?, 'تسوية سلفة - كشف رواتب أسبوعي', ?)
+                    ''', (emp_id, loan_deduction, end_date, payroll_id))
+                    deposits, withdrawals, balance = self._get_treasury_totals()
+                    balance += loan_deduction
+                    cursor.execute('''
+                        INSERT INTO cashbox (date, type, amount, source, description, category, balance_after)
+                        VALUES (?, 'deposit', ?, ?, ?, 'رواتب', ?)
+                    ''', (end_date, loan_deduction, f'تسوية سلفة من {emp_name} - كشف رواتب', f'تسوية سلفة من {emp_name} - كشف رواتب', balance))
 
-            # 4. If net salary > 0, deduct from treasury (salary payment)
-            if net_salary > 0:
-                self._treasury_add('withdrawal', net_salary, end_date, f'رواتب {emp_name} ({start_date} - {end_date})', 'رواتب', emp_name)
+                if net_salary > 0:
+                    deposits, withdrawals, balance = self._get_treasury_totals()
+                    balance -= net_salary
+                    cursor.execute('''
+                        INSERT INTO cashbox (date, type, amount, source, description, category, balance_after)
+                        VALUES (?, 'withdrawal', ?, ?, ?, 'رواتب', ?)
+                    ''', (end_date, net_salary, f'رواتب {emp_name} ({start_date} - {end_date})', f'رواتب {emp_name} ({start_date} - {end_date})', balance))
 
-        self.send_json_response({"success": True})
+            conn.commit()
+            self.send_json_response({"success": True})
+        except Exception as e:
+            conn.rollback()
+            server_log(f"save_payroll failed, rolled back: {e}")
+            self.send_json_response({"error": f"فشل حفظ كشف الرواتب: {str(e)}"}, 500)
 
     # Export CSV for Payroll
     def export_payroll_csv(self, start_date, end_date):
@@ -1522,14 +1691,23 @@ class BVCRequestHandler(http.server.BaseHTTPRequestHandler):
         if not admin or not self._verify_password(password, admin['password_hash']):
             self.send_json_response({"error": "كلمة مرور المدير غير صحيحة"}, 401)
             return
-        db.execute_db("DELETE FROM attendance")
-        db.execute_db("DELETE FROM cashbox")
-        db.execute_db("DELETE FROM transactions")
-        db.execute_db("DELETE FROM employee_ledger")
-        db.execute_db("DELETE FROM payroll")
-        db.execute_db("DELETE FROM factory_expenses")
-        db.execute_db("UPDATE inventory SET quantity=0")
-        self.send_json_response({"success": True})
+        conn = db.get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM attendance")
+            cursor.execute("DELETE FROM cashbox")
+            cursor.execute("DELETE FROM transactions")
+            cursor.execute("DELETE FROM employee_ledger")
+            cursor.execute("DELETE FROM payroll")
+            cursor.execute("DELETE FROM factory_expenses")
+            cursor.execute("UPDATE inventory SET quantity=0")
+            conn.commit()
+            self.send_json_response({"success": True})
+        except Exception as e:
+            conn.rollback()
+            server_log(f"reset_system failed, rolled back: {e}")
+            self.send_json_response({"error": f"فشل إعادة تعيين النظام: {str(e)}"}, 500)
 
     # ==================== INVENTORY XLSX EXPORT ====================
     def export_inventory_xlsx(self):
